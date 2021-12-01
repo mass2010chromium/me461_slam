@@ -1,17 +1,37 @@
 #include <iostream>
+#include <vector>
+
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
 
-#include <vector>
+#include <Eigen/Dense> 
+using Eigen::Matrix4d;
+
+class Robot {
+public:
+    Robot() {
+        pose.setIdentity();
+    }
+    ~Robot();
+
+    Matrix4d pose;
+};
+
+class Camera {
+public:
+    Camera(size_t px_u, size_t px_v, double u0, double v0);
+}
 
 int main()
 {
+    Robot robot;
+
     cv::Mat image1;
     image1 = cv::imread("known_patch0.pgm", 1);
     cv::Mat image2;
     image2 = cv::imread("known_patch1.pgm", 1);
-    cv::Mat image3;
+cv::Mat image3;
     
     cv::cvtColor(image1, image3, cv::COLOR_BGR2GRAY);
     
