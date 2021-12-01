@@ -1,0 +1,5 @@
+Webcam basic:
+https://raspberrypi-guide.github.io/electronics/using-usb-webcams
+
+Install opencv:
+sudo apt-get install libopencv-dev python3-opencv
