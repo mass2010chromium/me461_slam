@@ -5,4 +5,5 @@ DisplayImage
 *.o
 cmake_install.cmake
 Makefile
-tmp_data.p
+calibration/tmp_data.p
+webserver

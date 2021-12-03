@@ -13,15 +13,15 @@ public:
     Robot() {
         pose.setIdentity();
     }
-    ~Robot();
+    ~Robot() {};
 
     Matrix4d pose;
 };
 
 class Camera {
 public:
-    Camera(size_t px_u, size_t px_v, double u0, double v0);
-}
+    Camera(size_t px_u, size_t px_v, double u0, double v0) {};
+};
 
 int main()
 {
