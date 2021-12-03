@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html scroll-behavior="smooth">
+    <head>
+        <meta charset="UTF-8" />
+    </head>
+    <body>
+        <div>
+            mmm
+        </div>
+        <script>
+            class LogStream {
+                constructor() {
+                }
+                
+                write(chunk) {
+                    console.log(chunk);
+                }
+                
+                close() {
+                
+                }
+            }
+            fetch("stream")
+                .then(rs => rs.body)
+                .then(rs => rs.pipeTo(new WritableStream(new LogStream())))
+                .finally(() => console.log("done"));
+        </script>
+    </body>
+</html>

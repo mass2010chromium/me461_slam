@@ -30,62 +30,6 @@ int main() {
   HttpServer server;
   server.config.port = 8080;
 
-  // Add resources using path-regex and method-string, and an anonymous function
-  // POST-example for the path /string, responds the posted string
-  server.resource["^/string$"]["POST"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
-    // Retrieve string:
-    auto content = request->content.string();
-    // request->content.string() is a convenience function for:
-    // stringstream ss;
-    // ss << request->content.rdbuf();
-    // auto content=ss.str();
-
-    *response << "HTTP/1.1 200 OK\r\nContent-Length: " << content.length() << "\r\n\r\n"
-              << content;
-
-
-    // Alternatively, use one of the convenience functions, for instance:
-    // response->write(content);
-  };
-
-  // POST-example for the path /json, responds firstName+" "+lastName from the posted json
-  // Responds with an appropriate error message if the posted json is not valid, or if firstName or lastName is missing
-  // Example posted json:
-  // {
-  //   "firstName": "John",
-  //   "lastName": "Smith",
-  //   "age": 25
-  // }
-  server.resource["^/json$"]["POST"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
-    try {
-      ptree pt;
-      read_json(request->content, pt);
-
-      auto name = pt.get<string>("firstName") + " " + pt.get<string>("lastName");
-
-      *response << "HTTP/1.1 200 OK\r\n"
-                << "Content-Length: " << name.length() << "\r\n\r\n"
-                << name;
-    }
-    catch(const exception &e) {
-      *response << "HTTP/1.1 400 Bad Request\r\nContent-Length: " << strlen(e.what()) << "\r\n\r\n"
-                << e.what();
-    }
-
-
-    // Alternatively, using a convenience function:
-    // try {
-    //     ptree pt;
-    //     read_json(request->content, pt);
-
-    //     auto name=pt.get<string>("firstName")+" "+pt.get<string>("lastName");
-    //     response->write(name);
-    // }
-    // catch(const exception &e) {
-    //     response->write(SimpleWeb::StatusCode::client_error_bad_request, e.what());
-    // }
-  };
-
   // GET-example for the path /info
   // Responds with request-information
   server.resource["^/info$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
@@ -105,11 +49,41 @@ int main() {
 
     response->write(stream);
   };
+  
+  server.resource["^/raw$"]["POST"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
+    try {
+      ptree pt;
+      read_json(request->content, pt);
+      double cmd_vel = pt.get<double>("v");
+      double cmd_omega = pt.get<double>("w");
+      response->write("Command recieved");
+    }
+    catch (const exception& e) {
+      response->write(SimpleWeb::StatusCode::client_error_bad_request, e.what());
+    }
+  };
 
-  // GET-example for the path /match/[number], responds with the matched string in path (number)
-  // For instance a request GET /match/123 will receive: 123
-  server.resource["^/match/([0-9]+)$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
-    response->write(request->path_match[1].str());
+  server.resource["^/stream$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
+    thread work_thread([response] {
+      SimpleWeb::CaseInsensitiveMultimap header;
+      header.emplace("transfer-encoding", "chunked");
+      response->write(SimpleWeb::StatusCode::success_ok, header);
+      std::cout << "new connection" << std::endl;
+      bool loop = true;
+      while (loop) {
+        // this_thread::sleep_for(chrono::seconds(0.01));
+        auto s = "4\r\nhmmm\r\n";
+        (*response) << s;
+        response->send([&loop](const error_code& c) {
+            if (c.value() != 0) {
+              loop = false;
+            }
+          });
+        // std::cout << "send " << s << std::endl;
+      }
+      std::cout << "closing connection" << std::endl;
+    });
+    work_thread.detach();
   };
 
   // GET-example simulating heavy work in a separate thread
@@ -216,39 +190,6 @@ int main() {
   });
   cout << "Server listening on port " << server_port.get_future().get() << endl
        << endl;
-
-  // Client examples
-  string json_string = "{\"firstName\": \"John\",\"lastName\": \"Smith\",\"age\": 25}";
-
-  // Synchronous request examples
-  {
-    HttpClient client("localhost:8080");
-    try {
-      cout << "Example GET request to http://localhost:8080/match/123" << endl;
-      auto r1 = client.request("GET", "/match/123");
-      cout << "Response content: " << r1->content.rdbuf() << endl // Alternatively, use the convenience function r1->content.string()
-           << endl;
-
-      cout << "Example POST request to http://localhost:8080/string" << endl;
-      auto r2 = client.request("POST", "/string", json_string);
-      cout << "Response content: " << r2->content.rdbuf() << endl
-           << endl;
-    }
-    catch(const SimpleWeb::system_error &e) {
-      cerr << "Client request error: " << e.what() << endl;
-    }
-  }
-
-  // Asynchronous request example
-  {
-    HttpClient client("localhost:8080");
-    cout << "Example POST request to http://localhost:8080/json" << endl;
-    client.request("POST", "/json", json_string, [](shared_ptr<HttpClient::Response> response, const SimpleWeb::error_code &ec) {
-      if(!ec)
-        cout << "Response content: " << response->content.rdbuf() << endl;
-    });
-    client.io_service->run();
-  }
 
   server_thread.join();
 }
