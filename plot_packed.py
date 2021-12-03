@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import serial
 
-ser = serial.Serial('/dev/ttyUSB0', 230400, timeout=10)
+ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=10)
 
 buf = deque([])
 buf2 = deque([])
@@ -26,21 +26,22 @@ def update_func():
         # [u, left, right] = struct.unpack('ff', read_bytes)
         data = struct.unpack('fffffc', read_bytes)
         index = data[-2]
-        if i == -1 and index == int(index):
+        if i == -1 and index > 0 and index == int(index):
             print("sync", index)
             i = int(index + 1)
+            continue
+        if i == -1:
             continue
         elif i != int(index):
             print("Data desync", i, data)
             garbage = ser.readline()
             i = -1
             continue
-        if i == -1:
-            continue
         with buf_lock:
             if i % 8 == 0 and (len(buf) == 0 or not (abs(data[0] - buf[-1]) > 1
                     or abs(data[1] - buf2[-1]) > 1
-                    or abs(data[2] - buf3[-1]) > 1)):
+                    or abs(data[2] - buf3[-1]) > 1
+                    or abs(data[3] - buf4[-1]) > 1)):
                 if len(buf) == 1000:
                     buf.popleft()
                     buf2.popleft()
@@ -60,8 +61,8 @@ read_thread.start()
 fig = plt.figure()
 ax1, ax2 = fig.subplots(2, 1)
 ax1.set_aspect("equal")
-ax1.set_xlim([-3, 3])
-ax1.set_ylim([-3, 3])
+ax1.set_xlim([-1, 6])
+ax1.set_ylim([-1, 6])
 plt.ion()
 plt.show()
 
@@ -84,12 +85,12 @@ while True:
     xs = (tmp[-1], tmp[-1] + 0.1*np.cos(heading))
     ys = (tmp2[-1], tmp2[-1] + 0.1*np.sin(heading))
     ax1.plot(xs, ys)
-    ax1.set_xlim([-3, 3])
-    ax1.set_ylim([-3, 3])
+    ax1.set_xlim([-1, 6])
+    ax1.set_ylim([-1, 6])
     ax1.legend()
     ax2.clear()
     ax2.plot(_ts, tmp3, label="fused")
-    ax2.plot(_ts, tmp4, label="vel")
+    ax2.plot(_ts, tmp4, label="encoder")
     ax2.legend()
     ax2.set_title("misc")
     plt.pause(0.25)

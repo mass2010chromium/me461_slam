@@ -1,6 +1,6 @@
 import serial
 
-ser = serial.Serial('COM4', 115200, timeout=1)
+ser = serial.Serial('/dev/ttyUSB0', 460800, timeout=1)
 
 def update_func():
     while True:
