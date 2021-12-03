@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import serial
 
-ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=10)
+ser = serial.Serial('/dev/ttyAMA1', 115200, timeout=10)
 
 buf = deque([])
 buf2 = deque([])
@@ -23,20 +23,21 @@ def update_func():
     i = 0
     while True:
         read_bytes = ser.read(21)
-        # [u, left, right] = struct.unpack('ff', read_bytes)
-        data = struct.unpack('fffffc', read_bytes)
+        #print("read")
+        data = struct.unpack('ffffLc', read_bytes)
         index = data[-2]
-        if i == -1 and index > 0 and index == int(index):
-            print("sync", index)
-            i = int(index + 1)
+        if data[-1] != b'\n':
+            if i != -1:
+                i = -1
+                print("Data desync", i, data)
+            garbage = ser.readline()
             continue
         if i == -1:
+            print("sync", index)
+            i = index
             continue
-        elif i != int(index):
-            print("Data desync", i, data)
-            garbage = ser.readline()
-            i = -1
-            continue
+        #elif i != index:
+        #    continue
         with buf_lock:
             if i % 8 == 0 and (len(buf) == 0 or not (abs(data[0] - buf[-1]) > 1
                     or abs(data[1] - buf2[-1]) > 1
@@ -82,6 +83,7 @@ while True:
     ax1.set_title("position")
     ax1.plot(tmp, tmp2, label="pos")
     heading = tmp3[-1]
+    print(heading, tmp[-1], tmp2[-1])
     xs = (tmp[-1], tmp[-1] + 0.1*np.cos(heading))
     ys = (tmp2[-1], tmp2[-1] + 0.1*np.sin(heading))
     ax1.plot(xs, ys)

@@ -2,7 +2,7 @@ import serial
 import struct
 import time
 
-ser = serial.Serial('/dev/ttyUSB0', 230400, timeout=10)
+ser = serial.Serial('/dev/ttyAMA1', 115200, timeout=10)
 garbage = ser.readline()
 print("sync", garbage)
 i = 0
