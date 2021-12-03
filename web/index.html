@@ -4,10 +4,85 @@
         <meta charset="UTF-8" />
     </head>
     <body>
-        <div>
+        <div id="main">
             mmm
         </div>
+        <div id="svgcontainer">
+        </div>
+        <div id="joyDiv" style="width:200px;height:200px;margin-bottom:20px;"></div>
+
+        <script type = "text/javascript" src = "https://d3js.org/d3.v4.min.js"></script>
+        <script type = "text/javascript" src = "include/joy_min.js"></script>
         <script>
+            var joy = new JoyStick('joyDiv');
+
+            var width = 300;
+            var height = 300;
+            var svg = d3.select("#svgcontainer")
+                .append("svg").attr("width", width).attr("height", height);
+            const bb = d3.select('#svgcontainer').node().getBoundingClientRect();
+
+            const xScale = d3.scaleLinear()
+                .domain([-3, 3])
+                .range([0, width]);
+
+            const yScale = d3.scaleLinear()
+                .domain([-3, 3])
+                .range([height, 0]);
+
+            const line = d3.line()
+                .curve(d3.curveNatural)
+                .x(d => xScale(d[0]))
+                .y(d => yScale(d[1]));
+
+            const line2 = d3.line()
+                .curve(d3.curveNatural)
+                .x(d => xScale(d[0]))
+                .y(d => yScale(d[1]));
+
+            let points = [];
+            svg.append('path').attr('d', line(points));
+            svg.append('line').style('stroke', 'orange');
+
+            // TODO: stream instead of spam http
+            let target_div = document.getElementById("main");
+            function refresh() {
+                fetch("pose")
+                    .then(rs => rs.json())
+                    .then(dat => {
+                        target_div.innerHTML = JSON.stringify(dat);
+                        setTimeout(refresh, 20);
+                        if (points.length >= 1000) {
+                            points.shift();
+                        }
+                        points.push([dat.x, dat.y]);
+                        const pointer_dist = 0.1;
+
+                        svg.selectAll('path')
+                           .data([points])
+                           .attr('d', line)
+                           .attr('stroke', 'black')
+                           .attr('fill', 'none');
+                        svg.selectAll('line')
+                           .attr('x1', xScale(dat.x))
+                           .attr('y1', yScale(dat.y))
+                           .attr('x2', xScale(dat.x + pointer_dist * Math.cos(dat.heading)))
+                           .attr('y2', yScale(dat.y + pointer_dist * Math.sin(dat.heading)));
+
+                        const v_command = joy.GetX() / 100.0;
+                        const w_command = joy.GetY() / 100.0;
+                        let data = { v: v_command, w: w_command };
+
+                        fetch("raw", {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify(data)
+                            });
+                            //.then(res => console.log("command sent"));
+                    });
+            }
+            setTimeout(refresh, 20);
+
             class LogStream {
                 constructor() {
                 }
@@ -20,10 +95,10 @@
                 
                 }
             }
-            fetch("stream")
-                .then(rs => rs.body)
-                .then(rs => rs.pipeTo(new WritableStream(new LogStream())))
-                .finally(() => console.log("done"));
+            //fetch("stream")
+            //    .then(rs => rs.body)
+            //    .then(rs => rs.pipeTo(new WritableStream(new LogStream())))
+            //    .finally(() => console.log("done"));
         </script>
     </body>
 </html>

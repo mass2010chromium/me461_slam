@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-#include "serial_dev.c"
+#include "webserver/serial_dev.c"
 
 int main() {
     sd_setup("/dev/ttyAMA1");

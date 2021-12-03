@@ -7,6 +7,8 @@
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
 
+#include <boost/lockfree/queue.hpp>
+
 // Added for the default_resource example
 #include <algorithm>
 #include <boost/filesystem.hpp>
@@ -16,12 +18,38 @@
 #include "crypto.hpp"
 #endif
 
+#include <stdio.h>
+#include "serial_dev.h"
+
 using namespace std;
 // Added for the json-example:
 using namespace boost::property_tree;
 
 using HttpServer = SimpleWeb::Server<SimpleWeb::HTTP>;
 using HttpClient = SimpleWeb::Client<SimpleWeb::HTTP>;
+
+struct RobotInfo {
+    float x;
+    float y;
+    float heading;
+    float v;
+    float w;
+};
+typedef struct RobotInfo RobotInfo;
+
+RobotInfo robot_info;
+
+struct RobotCommand {
+    RobotCommand() : cmd_v(0), cmd_w(0) {}
+    RobotCommand(float v, float w) : cmd_v(v), cmd_w(w) {}
+
+    float cmd_v;
+    float cmd_w;
+};
+typedef struct RobotCommand RobotCommand;
+
+// lol single threaded server go brr
+boost::lockfree::queue<RobotCommand> command_queue(128);
 
 int main() {
   // HTTP-server at port 8080 using 1 thread
@@ -50,12 +78,23 @@ int main() {
     response->write(stream);
   };
   
+  server.resource["^/pose$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
+    stringstream stream;
+    stream << "{\"x\":" << robot_info.x
+           << ",\"y\":" << robot_info.y
+           << ",\"heading\":" << robot_info.heading
+           << ",\"v\":" << robot_info.v
+           << ",\"w\":" << robot_info.w << "}";
+    response->write(stream);
+  };
+  
   server.resource["^/raw$"]["POST"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
     try {
       ptree pt;
       read_json(request->content, pt);
-      double cmd_vel = pt.get<double>("v");
-      double cmd_omega = pt.get<double>("w");
+      float cmd_vel = pt.get<float>("v");
+      float cmd_omega = pt.get<float>("w");
+      command_queue.push(RobotCommand(cmd_vel, cmd_omega));
       response->write("Command recieved");
     }
     catch (const exception& e) {
@@ -68,7 +107,7 @@ int main() {
       SimpleWeb::CaseInsensitiveMultimap header;
       header.emplace("transfer-encoding", "chunked");
       response->write(SimpleWeb::StatusCode::success_ok, header);
-      std::cout << "new connection" << std::endl;
+      cout << "new connection" << endl;
       bool loop = true;
       while (loop) {
         // this_thread::sleep_for(chrono::seconds(0.01));
@@ -79,9 +118,9 @@ int main() {
               loop = false;
             }
           });
-        // std::cout << "send " << s << std::endl;
+        // cout << "send " << s << endl;
       }
-      std::cout << "closing connection" << std::endl;
+      cout << "closing connection" << endl;
     });
     work_thread.detach();
   };
@@ -190,6 +229,50 @@ int main() {
   });
   cout << "Server listening on port " << server_port.get_future().get() << endl
        << endl;
+  
+  thread robot_thread([&robot_info]() {
+    // Listen to robot info.
+    sd_setup("/dev/ttyAMA1");
+    sd_set_speed(115200);
+    sd_set_blocking();
+    char recv_buf[21];
+    char send_buf[9];
+    send_buf[8] = '\n';
+    u_int32_t index = 0;
+    
+    while(1) {
+    
+      RobotCommand new_command;
+      if (command_queue.pop(new_command)) {
+        //cout << "got cmd" << endl;
+        *((float*)send_buf) = new_command.cmd_v;
+        *((float*)(send_buf + 4)) = new_command.cmd_w;
+        sd_writen(send_buf, 9);
+      }
+      sd_readn(recv_buf, 21);
+      if (recv_buf[20] != '\n') {
+        printf("desync %u\n", index);
+        char c = 0;
+        while (c != '\n') {
+            int n = sd_readn(&c, 1);
+        }
+        index = *((u_int32_t*) (recv_buf + 16));
+        printf("sync %u\n", index);
+        continue;
+      }
+      index += 1;
+      u_int32_t new_index = *((u_int32_t*) (recv_buf + 16));
+      if (new_index != index) {
+          printf("bad index: %u, expected %u\n", new_index, index);
+          index = new_index;
+      }
+      else {
+        robot_info.x = *((float*) (recv_buf));
+        robot_info.y = *((float*) (recv_buf + 4));
+        robot_info.heading = *((float*) (recv_buf + 8));
+      }
+    }
+  });
 
   server_thread.join();
 }

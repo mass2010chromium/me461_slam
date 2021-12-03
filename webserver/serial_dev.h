@@ -19,11 +19,12 @@
  * if you want to change the sickd or customise it
  */
    
-char sd_dev_name[256];
-int sd_dev_fd;
-struct termios sd_options;
-long sd_flags;
-int sd_blocking;
+extern char sd_dev_name[256];
+extern int sd_dev_fd;
+extern struct termios sd_options;
+extern long sd_flags;
+extern int sd_blocking;
+extern char sd_data[256];
 
 int sd_setup(char *dn);
 int sd_kill();
@@ -42,4 +43,3 @@ int sd_getflags(int flags);
 int sd_iflush();
 int sd_oflush();
 int sd_ioflush();
-char sd_data[256];

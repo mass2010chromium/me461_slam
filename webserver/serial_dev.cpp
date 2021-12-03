@@ -1,5 +1,12 @@
 #include "serial_dev.h"
 
+char sd_dev_name[256];
+int sd_dev_fd;
+struct termios sd_options;
+long sd_flags;
+int sd_blocking;
+char sd_data[256];
+
 int sd_setup(char *dn)
 {
     

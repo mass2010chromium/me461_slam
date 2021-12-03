@@ -6,4 +6,5 @@ DisplayImage
 cmake_install.cmake
 Makefile
 calibration/tmp_data.p
-webserver
+server
+serial_test

@@ -8,6 +8,10 @@ target_link_libraries( DisplayImage ${OpenCV_LIBS} Eigen3::Eigen )
 
 project( webserver )
 find_package( Threads REQUIRED )
+find_library( atomic-lib NAMES libatomic.so libatomic.so.1 )
 find_package( Boost COMPONENTS system thread filesystem REQUIRED )
-add_executable( webserver webserver.cpp )
-target_link_libraries( webserver ${CMAKE_THREAD_LIBS_INIT} ${Boost_LIBRARIES} )
+add_executable( server webserver/webserver.cpp webserver/serial_dev.cpp )
+target_link_libraries( server ${CMAKE_THREAD_LIBS_INIT} ${Boost_LIBRARIES} ${atomic-lib} )
+
+#project( serial_test )
+#add_executable ( serial_test serial_main.c )
