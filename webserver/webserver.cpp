@@ -244,7 +244,7 @@ int main() {
     
       RobotCommand new_command;
       if (command_queue.pop(new_command)) {
-        //cout << "got cmd" << endl;
+        //cout << "got cmd " << new_command.cmd_v << ", " << new_command.cmd_w << endl;
         *((float*)send_buf) = new_command.cmd_v;
         *((float*)(send_buf + 4)) = new_command.cmd_w;
         sd_writen(send_buf, 9);

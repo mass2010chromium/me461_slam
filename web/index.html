@@ -69,16 +69,17 @@
                            .attr('x2', xScale(dat.x + pointer_dist * Math.cos(dat.heading)))
                            .attr('y2', yScale(dat.y + pointer_dist * Math.sin(dat.heading)));
 
-                        const v_command = joy.GetX() / 100.0;
-                        const w_command = joy.GetY() / 100.0;
-                        let data = { v: v_command, w: w_command };
-
-                        fetch("raw", {
-                                method: 'POST',
-                                headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify(data)
-                            });
-                            //.then(res => console.log("command sent"));
+                        const v_command = joy.GetY() / 100.0;
+                        const w_command = -joy.GetX() / 100.0;
+                        if (v_command != 0 || w_command != 0) {
+                            let data = { v: v_command, w: w_command };
+                            fetch("raw", {
+                                    method: 'POST',
+                                    headers: {'Content-Type': 'application/json'},
+                                    body: JSON.stringify(data)
+                                });
+                                //.then(res => console.log("command sent"));
+                        }
                     });
             }
             setTimeout(refresh, 20);

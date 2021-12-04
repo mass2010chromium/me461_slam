@@ -46,5 +46,5 @@ while 1:
     if (x-x0)**2 + (y-y0)**2 > 1:
         print("Done", x, y, x0, y0)
         break
-    command = struct.pack('ffc', 1, 0.0, '\n'.encode('utf-8'))
+    command = struct.pack('ffc', -1.0, 0.0, '\n'.encode('utf-8'))
     ser.write(command)
