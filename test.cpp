@@ -31,7 +31,7 @@ int main()
     image1 = cv::imread("known_patch0.pgm", 1);
     cv::Mat image2;
     image2 = cv::imread("known_patch1.pgm", 1);
-cv::Mat image3;
+    cv::Mat image3;
     
     cv::cvtColor(image1, image3, cv::COLOR_BGR2GRAY);
     

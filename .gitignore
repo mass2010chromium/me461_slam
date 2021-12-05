@@ -6,5 +6,6 @@ DisplayImage
 cmake_install.cmake
 Makefile
 calibration/tmp_data.p
+calibration/undistort
 server
 serial_test

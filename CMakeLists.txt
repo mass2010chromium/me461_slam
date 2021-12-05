@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
+
 project( DisplayImage )
 find_package( OpenCV REQUIRED )
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)
@@ -12,6 +13,8 @@ find_library( atomic-lib NAMES libatomic.so libatomic.so.1 )
 find_package( Boost COMPONENTS system thread filesystem REQUIRED )
 add_executable( server webserver/webserver.cpp webserver/serial_dev.cpp )
 target_link_libraries( server ${CMAKE_THREAD_LIBS_INIT} ${Boost_LIBRARIES} ${atomic-lib} )
+
+add_subdirectory( calibration )
 
 #project( serial_test )
 #add_executable ( serial_test serial_main.c )
