@@ -1,4 +1,3 @@
-#include <simple-web-server/client_http.hpp>
 #include <simple-web-server/server_http.hpp>
 #include <future>
 
@@ -26,7 +25,6 @@ using namespace std;
 using namespace boost::property_tree;
 
 using HttpServer = SimpleWeb::Server<SimpleWeb::HTTP>;
-using HttpClient = SimpleWeb::Client<SimpleWeb::HTTP>;
 
 struct RobotInfo {
     float x;
@@ -235,7 +233,7 @@ int main() {
     sd_setup("/dev/ttyAMA1");
     sd_set_speed(115200);
     sd_set_blocking();
-    char recv_buf[21];
+    char recv_buf[25];
     char send_buf[9];
     send_buf[8] = '\n';
     u_int32_t index = 0;
@@ -249,19 +247,20 @@ int main() {
         *((float*)(send_buf + 4)) = new_command.cmd_w;
         sd_writen(send_buf, 9);
       }
-      sd_readn(recv_buf, 21);
-      if (recv_buf[20] != '\n') {
+      sd_readn(recv_buf, 25);
+      if (recv_buf[24] != '\n') {
         printf("desync %u\n", index);
         char c = 0;
         while (c != '\n') {
             int n = sd_readn(&c, 1);
         }
-        index = *((u_int32_t*) (recv_buf + 16));
+        sd_readn(recv_buf, 25);
+        index = *((u_int32_t*) (recv_buf + 20));
         printf("sync %u\n", index);
         continue;
       }
       index += 1;
-      u_int32_t new_index = *((u_int32_t*) (recv_buf + 16));
+      u_int32_t new_index = *((u_int32_t*) (recv_buf + 20));
       if (new_index != index) {
           printf("bad index: %u, expected %u\n", new_index, index);
           index = new_index;
@@ -270,6 +269,8 @@ int main() {
         robot_info.x = *((float*) (recv_buf));
         robot_info.y = *((float*) (recv_buf + 4));
         robot_info.heading = *((float*) (recv_buf + 8));
+        robot_info.v = *((float*) (recv_buf + 12));
+        robot_info.w = *((float*) (recv_buf + 16));
       }
     }
   });

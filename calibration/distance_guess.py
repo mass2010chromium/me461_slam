@@ -9,10 +9,10 @@ with open("intrinsics.json") as _intrinsics:
 camera_mat = np.array(intrinsics["matrix"])
 camera_dist = np.array(intrinsics["distortion"])
 
-test_im = cv2.imread("undistort.png")
-#test_im = cv2.imread("sample.png")
-#test_im = cv2.undistort(test_im, camera_mat, camera_dist)
-#cv2.imwrite("undistort.png", test_im)
+#test_im = cv2.imread("undistort.png")
+test_im = cv2.imread("cpp_log/capture_000565.png")
+test_im = cv2.undistort(test_im, camera_mat, camera_dist)
+cv2.imwrite("undistort.png", test_im)
 h, w, _ = test_im.shape
 
 test_point_1 = (419, 382)
