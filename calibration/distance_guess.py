@@ -8,6 +8,12 @@ from sklearn import cluster
 from motionlib import so3, se3
 from motionlib import vectorops as vo
 
+import sys
+if len(sys.argv) > 1:
+    folder = sys.argv[1]
+else:
+    folder = "./cpp_log/"
+
 with open("intrinsics.json") as _intrinsics:
     intrinsics = json.load(_intrinsics)
 fov_x = intrinsics['fovx']
@@ -96,7 +102,7 @@ def plot_lines(img, lines, color):
     for line in lines:
         cv2.line(img, line[:2], line[2:], color)
 
-def split_image(grad_img):
+def split_image(grad_img, prev_transform_lines):
     h, w = grad_img.shape
     split_row = h//2
     yvals = np.empty(w)
@@ -106,13 +112,21 @@ def split_image(grad_img):
     for i in range(w):
         if yvals[i] < split_row:
             k = yvals[i]
-            while reversed[k, i] != 0:
+            if reversed[k, i] != 0:
                 _target[k, i] = 128
-                k += 1
-                if k == split_row:
-                    break
+
+    prev_mask = np.zeros(grad_img.shape, dtype=np.uint8)
+    plot_lines(prev_mask, prev_transform_lines, 1)
+    prev_mask *= grad_img
+    _target += prev_mask[w-1:split_row-1:-1, :]
+    cv2.imshow("target", _target)
     target = _target#cv2.GaussianBlur(_target, (0, 0), 0.5) * 2
-    lines = [l[0] for l in cv2.HoughLinesP(target, 5, 0.01, 50, minLineLength=10, maxLineGap=20)[:100]]
+    match_lines = cv2.HoughLinesP(target, 5, 0.01, 50, minLineLength=10, maxLineGap=10)
+    if match_lines is None:
+        print("no lines found")
+        return []
+    print(len(match_lines), "lines found")
+    lines = [l[0] for l in match_lines[:50]]
 
     _target[:, :] = 0
     dbscan.fit(lines)
@@ -205,9 +219,9 @@ estimated_rot_err = 0
 pose = None
 prev_head_tmp = None
 while True:
-    _test_im = cv2.imread("cpp_log/capture_{:06}.png".format(i), cv2.IMREAD_GRAYSCALE)
+    _test_im = cv2.imread(folder + "/capture_{:06}.png".format(i), cv2.IMREAD_GRAYSCALE)
     test_im = cv2.undistort(_test_im, camera_mat, camera_dist)
-    with open("cpp_log/pose_{:06}.json".format(i - VIDEO_DELAY)) as pose_file:
+    with open(folder + "/pose_{:06}.json".format(i - VIDEO_DELAY)) as pose_file:
         if pose is None:
             pose = json.load(pose_file)
             prev_head_tmp = pose['heading']
@@ -229,131 +243,102 @@ while True:
     marked_im = test_im.copy()
 
     #deriv = 50 * (np.abs(cv2.Laplacian(cv2.GaussianBlur(marked_im, (0, 0), 5), cv2.CV_64F, ksize=5)) > 30)
-    deriv = np.array(50 * (np.abs(cv2.Laplacian(cv2.GaussianBlur(marked_im, (0, 0), 3), cv2.CV_64F, ksize=5)) > 100), dtype=np.uint8)
-    lines = split_image(deriv)
-    plot_lines(deriv, lines, 255)
-    print(deriv.shape)
-    tracked_points = []
-    cam_pose = get_camera_pose(pose)
-    for x, y, z, x_im, y_im in plot_points:
-        transformed_point = se3.apply(cam_pose, (x, y, z))
-        tracked_points.append(transformed_point)
-        marked_im = cv2.circle(marked_im, (x_im, y_im), 2, (255, 0, 0), 2)
+    #deriv = np.array(50 * (np.abs(cv2.Laplacian(cv2.GaussianBlur(marked_im, (0, 0), 3), cv2.CV_64F, ksize=5)) > 100), dtype=np.uint8)
+    #deriv = np.array(50 * (np.abs(cv2.Laplacian(cv2.GaussianBlur(marked_im, (0, 0), 0.5), cv2.CV_64F, ksize=3)) > 100), dtype=np.uint8)
+    deriv = cv2.Canny(marked_im, 150, 300) // 2
+    
+    prev_transform_lines = []
+    if prev_lines is not None:
+        for p1, p2 in prev_lines:
+            new_p1 = project_point(cam_inv, p1)
+            new_p2 = project_point(cam_inv, p2)
+            prev_transform_lines.append([*new_p1, *new_p2])
+    lines = split_image(deriv, prev_transform_lines)
 
-    proj_lines = []
-    print(lines[0])
-    for line in lines:
-        p1 = line[:2]
-        p2 = line[2:]
-        new_p1 = se3.apply(cam_pose, transform_point(p1))
-        new_p2 = se3.apply(cam_pose, transform_point(p2))
-        proj_lines.append((new_p1, new_p2))
-
-    print(pose)
-    scaled_lines = []
-    for p1, p2 in proj_lines:
-        p1 = map_scale(p1[:2])
-        p2 = map_scale(p2[:2])
-        scaled_lines.append((*p1, *p2))
-
-    pose_x = pose['x']
-    pose_y = pose['y']
-    pose_center = (pose_x, pose_y)
-    pose_px = map_scale(pose_center)
-    pose_px_x, pose_px_y = pose_px
-
-    max_depth = 2
-    scale = map_scaling * max_depth
-    zero_mask = np.zeros(map_img.shape[:2], dtype=np.uint8)
-    circle_mask = zero_mask.copy()
-    cv2.circle(circle_mask, pose_px, scale, 1, -1)
-    cv2.circle(circle_mask, pose_px, int(0.28 * map_scaling), 0, -1)
-    map_thresh = map_img[:, :, 0] > 70
-    centered_lines = []
-    for x1, y1, x2, y2 in scaled_lines:
-        centered_lines.append([x1 - pose_px_x, y1 - pose_px_y,
-                               x2 - pose_px_x, y2 - pose_px_y])
-    confidences = []
-    #deltas = [-0.02, -0.015, -0.01, -0.005, 0, 0.005, 0.01, 0.015, 0.02]
-    #deltas = [-0.04, -0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03, 0.04]
-    #deltas = [-0.08, -0.06, -0.04, -0.02, 0, 0.02, 0.04, 0.06, 0.08]
-    deltas = [-0.08, -0.07, -0.06, -0.05, -0.04, -0.03, -0.02, -0.01,
-              0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]
-    for delta_angle in deltas:
-        rot_mat = np.array([[np.cos(delta_angle), np.sin(delta_angle)],
-                            [-np.sin(delta_angle), np.cos(delta_angle)]])
-        transform_lines = []
-        for line in centered_lines:
-            transform_lines.append(np.array([*(rot_mat @ line[:2] + pose_px),
-                                             *(rot_mat @ line[2:] + pose_px)],
-                                             dtype=np.int32))
-        lines_only = zero_mask.copy()
-        plot_lines(lines_only, transform_lines, 1)
-        lines_only *= circle_mask
-        line_px = np.where(lines_only == 1)
-        max_score = len(line_px[0])
-        score = np.sum(map_thresh[line_px])
-        confidences.append(score / max_score)
-    if max(confidences) > 0.0:
-        confidences = np.array(confidences)
-        total = np.sum(confidences)
-        net_delta = vo.dot(confidences, deltas) / total
-        print("guess:", net_delta, confidences)
-        estimated_rot_err -= net_delta
-        pose['heading'] += estimated_rot_err
-    else:
-        print("bad data", confidences)
-
-    points_angles = []
-    heading = pose['heading']
-    max_angle = heading + fov_x/2
-    min_angle = heading - fov_x/2
-    unit_heading = (np.cos(heading), np.sin(heading))
-    # mmmmm rotation reversed due to left handed coord sys
-    heading_perp = (np.sin(heading), np.cos(heading))
-    for x1, y1, x2, y2 in scaled_lines:
-        v1 = vo.sub((x1, y1), pose_px)
-        v2 = vo.sub((x2, y2), pose_px)
-        v1_l = vo.norm(v1)
-        v2_l = vo.norm(v2)
-        angle1 = np.arccos(vo.dot(heading_perp, v1) / v1_l) - np.pi/2
-        angle2 = np.arccos(vo.dot(heading_perp, v2) / v2_l) - np.pi/2
-        if v1_l > scale:
-            v1 = vo.mul(v1, scale/ v1_l)
-        if v2_l > scale:
-            v2 = vo.mul(v2, scale/ v2_l)
-        if abs(angle1) < fov_x / 2:
-            points_angles.append((angle1, vo.add(v1, pose_px)))
-        if abs(angle2) < fov_x / 2:
-            points_angles.append((angle2, vo.add(v2, pose_px)))
-    points_angles.sort()
-    r_start = vo.norm(vo.sub(points_angles[0][1], pose_px))
-    r_end = vo.norm(vo.sub(points_angles[-1][1], pose_px))
-    # More rotation inversion
-    point_start = vo.add((r_start * np.cos(min_angle), -r_start * np.sin(min_angle)), pose_px)
-    point_end = vo.add((r_end * np.cos(max_angle), -r_end * np.sin(max_angle)), pose_px)
-    observe_mask = np.zeros(map_img.shape[:2], dtype=np.uint8)
-    observe_points = np.array([point_start] + [x[1] for x in points_angles] + [point_end, pose_px], dtype=np.int32)
-    cv2.fillPoly(observe_mask, pts=[observe_points], color=1)
-    cv2.imshow("mask", observe_mask*255)
+    observe_mask = np.zeros(map_img.shape[:2])
+    disp_map = map_img.copy()
+    new_lines = np.zeros(map_img.shape, dtype=np.uint8)
+    if len(lines) > 0:
+        plot_lines(deriv, lines, 255)
+        print(deriv.shape)
+        tracked_points = []
+        cam_pose = get_camera_pose(pose)
+        for x, y, z, x_im, y_im in plot_points:
+            transformed_point = se3.apply(cam_pose, (x, y, z))
+            tracked_points.append(transformed_point)
+            marked_im = cv2.circle(marked_im, (x_im, y_im), 2, (255, 0, 0), 2)
+    
+        proj_lines = []
+        print(lines[0])
+        for line in lines:
+            p1 = line[:2]
+            p2 = line[2:]
+            new_p1 = se3.apply(cam_pose, transform_point(p1))
+            new_p2 = se3.apply(cam_pose, transform_point(p2))
+            proj_lines.append((new_p1, new_p2))
+    
+        print(pose)
+        scaled_lines = []
+        for p1, p2 in proj_lines:
+            p1 = map_scale(p1[:2])
+            p2 = map_scale(p2[:2])
+            scaled_lines.append((*p1, *p2))
+    
+        pose_x = pose['x']
+        pose_y = pose['y']
+        pose_center = (pose_x, pose_y)
+        pose_px = map_scale(pose_center)
+        pose_px_x, pose_px_y = pose_px
+    
+        max_depth = 1
+        scale = map_scaling * max_depth
+        zero_mask = np.zeros(map_img.shape[:2])
+        circle_mask = zero_mask.copy()
+        cv2.circle(circle_mask, pose_px, scale*3, 0.25, -1)
+        cv2.circle(circle_mask, pose_px, scale*2, 0.5, -1)
+        cv2.circle(circle_mask, pose_px, scale, 1, -1)
+        cv2.circle(circle_mask, pose_px, int(0.28 * map_scaling), 0, -1)
+    
+        points_angles = []
+        heading = pose['heading']
+        max_angle = heading + fov_x/2
+        min_angle = heading - fov_x/2
+        unit_heading = (np.cos(heading), -np.sin(heading))
+        # mmmmm rotation reversed due to left handed coord sys
+        heading_perp = (np.sin(heading), np.cos(heading))
+        for x1, y1, x2, y2 in scaled_lines:
+            v1 = vo.sub((x1, y1), pose_px)
+            v2 = vo.sub((x2, y2), pose_px)
+            v1_l = vo.norm(v1)
+            v2_l = vo.norm(v2)
+            angle1 = np.arccos(vo.dot(heading_perp, v1) / v1_l) - np.pi/2
+            angle2 = np.arccos(vo.dot(heading_perp, v2) / v2_l) - np.pi/2
+            if abs(angle1) < fov_x / 2 and vo.dot(unit_heading, v1) > 0:
+                points_angles.append((angle1, vo.add(v1, pose_px)))
+            if abs(angle2) < fov_x / 2 and vo.dot(unit_heading, v2) > 0:
+                points_angles.append((angle2, vo.add(v2, pose_px)))
+        if len(points_angles) > 0:
+            points_angles.sort()
+            r_start = vo.norm(vo.sub(points_angles[0][1], pose_px))
+            r_end = vo.norm(vo.sub(points_angles[-1][1], pose_px))
+            # More rotation inversion
+            point_start = vo.add((r_start * np.cos(min_angle), -r_start * np.sin(min_angle)), pose_px)
+            point_end = vo.add((r_end * np.cos(max_angle), -r_end * np.sin(max_angle)), pose_px)
+            observe_points = np.array([point_start] + [x[1] for x in points_angles] + [point_end, pose_px], dtype=np.int32)
+            cv2.fillPoly(observe_mask, pts=[observe_points], color=1)
+            observe_mask *= circle_mask
+        cv2.imshow("mask", observe_mask)
+        plot_lines(disp_map, scaled_lines, (0, 0, 255))
+        plot_lines(new_lines, scaled_lines, (255, 255, 255))
 
     cam_inv = se3.inv(cam_pose)
     if prev_points is not None:
-        #transform_lines = []
-        #for p1, p2 in prev_lines:
-        #    new_p1 = project_point(cam_inv, p1)
-        #    new_p2 = project_point(cam_inv, p2)
-        #    transform_lines.append([*new_p1, *new_p2])
-
-        #plot_lines(deriv, transform_lines, 100)
         for point in prev_points:
             x_im, y_im = project_point(cam_inv, point)
             if x_im >= 0 and x_im < w and y_im >= 0 and y_im < h:
                 marked_im = cv2.circle(marked_im, (x_im, y_im), 5, (0, 0, 255), 2)
 
     pointer_scale = 0.5
-    disp_map = map_img.copy()
-    plot_lines(disp_map, scaled_lines, (0, 0, 255))
     cv2.circle(disp_map, pose_px, 5, (0, 255, 0), 1)
     cv2.line(disp_map, pose_px,
                        map_scale((pose_x + pointer_scale * np.cos(heading),
@@ -376,9 +361,7 @@ while True:
         break
     else:
         i += 1
-    new_lines = np.zeros(map_img.shape, dtype=np.uint8)
-    plot_lines(new_lines, scaled_lines, (255, 255, 255))
-    map_img -= np.array(map_img * observe_mask[:, :, np.newaxis] * 0.1, dtype=np.uint8)
+    map_img -= np.array(map_img * observe_mask[:, :, np.newaxis] * 0.05, dtype=np.uint8)
     map_img += np.array(new_lines * observe_mask[:, :, np.newaxis], dtype=np.uint8)
 
     prev_pose = cam_pose
