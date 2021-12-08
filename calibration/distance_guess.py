@@ -186,7 +186,7 @@ prev_lines = None
 prev_observe_mask = None
 
 VIDEO_DELAY = 4
-start_frame = 53
+start_frame = 10
 end_frame = 254
 i = start_frame
 
@@ -266,7 +266,8 @@ while True:
     scale = map_scaling * max_depth
     zero_mask = np.zeros(map_img.shape[:2], dtype=np.uint8)
     circle_mask = zero_mask.copy()
-    cv2.circle(circle_mask, pose_px, scale, (1, 1, 1), -1)
+    cv2.circle(circle_mask, pose_px, scale, 1, -1)
+    cv2.circle(circle_mask, pose_px, int(0.28 * map_scaling), 0, -1)
     map_thresh = map_img[:, :, 0] > 70
     centered_lines = []
     for x1, y1, x2, y2 in scaled_lines:
@@ -364,7 +365,7 @@ while True:
                        map_scale((pose_x + 100*np.cos(min_angle),
                                   pose_y + 100*np.sin(min_angle))), (255, 0, 0))
     cv2.imshow("map", disp_map)
-    #cv2.imshow("before", deriv / 200)
+    cv2.imshow("before", deriv / 200)
     cv2.imshow("marked", marked_im)
     key = cv2.waitKeyEx(0)
     if key == 65361:
@@ -378,7 +379,7 @@ while True:
     new_lines = np.zeros(map_img.shape, dtype=np.uint8)
     plot_lines(new_lines, scaled_lines, (255, 255, 255))
     map_img -= np.array(map_img * observe_mask[:, :, np.newaxis] * 0.1, dtype=np.uint8)
-    map_img += np.array(new_lines * circle_mask[:, :, np.newaxis], dtype=np.uint8)
+    map_img += np.array(new_lines * observe_mask[:, :, np.newaxis], dtype=np.uint8)
 
     prev_pose = cam_pose
     prev_points = tracked_points
