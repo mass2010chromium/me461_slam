@@ -215,6 +215,7 @@ while True:
             dy = new_pose['y'] - pose['y']
             pose['x'] += dx * np.cos(estimated_rot_err) + dy * np.sin(estimated_rot_err)
             pose['y'] += dy * np.cos(estimated_rot_err) - dx * np.sin(estimated_rot_err)
+            print("heading change:", new_pose['heading'] - estimated_rot_err - pose['heading']
             pose['heading'] = new_pose['heading'] - estimated_rot_err
             pose['v'] = new_pose['v']
             pose['w'] = new_pose['w']
