@@ -8,16 +8,25 @@ from sklearn import cluster
 from motionlib import so3, se3
 from motionlib import vectorops as vo
 
+import urllib.request
+
 import sys
 if len(sys.argv) > 1:
     folder = sys.argv[1]
 else:
     folder = "./cpp_log/"
 
+# lol hack
+camera = folder == '--camera'
+
 with open("intrinsics.json") as _intrinsics:
     intrinsics = json.load(_intrinsics)
 fov_x = intrinsics['fovx']
 
+if camera:
+    print('connecting to camera')
+    cam = cv2.VideoCapture(0)
+    cam.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 camera_mat = np.array(intrinsics["matrix"])
 camera_dist = np.array(intrinsics["distortion"])
 
@@ -135,6 +144,7 @@ def split_image(grad_img, prev_transform_lines):
     plots = []
     for group, line in zip(y_pred, lines):
         if group == -1:
+            # "noise" but in this case we keep them lol?
             plots.append(line)
         else:
             if group in boxes:
@@ -199,13 +209,13 @@ prev_points = None
 prev_lines = None
 prev_observe_mask = None
 
-VIDEO_DELAY = 4
+VIDEO_DELAY = 1
 start_frame = 10
 end_frame = 254
 i = start_frame
 
 map_w = 400
-map_img = np.zeros((map_w, map_w, 3), dtype=np.uint8)
+map_img = np.ones((map_w, map_w, 3), dtype=np.uint8)* 255
 map_center = map_w // 2
 map_scaling = 25
 def map_scale(pt):
@@ -218,27 +228,37 @@ estimated_rot_err = 0
 
 pose = None
 prev_head_tmp = None
+pose_queue = []
 while True:
-    _test_im = cv2.imread(folder + "/capture_{:06}.png".format(i), cv2.IMREAD_GRAYSCALE)
+    if camera:
+        ret, _test_im = cam.read()
+    else:
+        _test_im = cv2.imread(folder + "/capture_{:06}.png".format(i), cv2.IMREAD_GRAYSCALE)
     test_im = cv2.undistort(_test_im, camera_mat, camera_dist)
-    with open(folder + "/pose_{:06}.json".format(i - VIDEO_DELAY)) as pose_file:
-        if pose is None:
-            pose = json.load(pose_file)
-            prev_head_tmp = pose['heading']
-        else:
+    if camera:
+        new_pose = json.loads(urllib.request.urlopen("http://localhost:8080/pose").read())
+    else:
+        with open(folder + "/pose_{:06}.json".format(i - VIDEO_DELAY)) as pose_file:
             new_pose = json.load(pose_file)
-            dx = new_pose['x'] - pose['x']
-            dy = new_pose['y'] - pose['y']
-            pose['x'] += dx * np.cos(estimated_rot_err) + dy * np.sin(estimated_rot_err)
-            pose['y'] += dy * np.cos(estimated_rot_err) - dx * np.sin(estimated_rot_err)
-            print("raw pose:", new_pose)
-            print("heading change:", new_pose['heading'] - prev_head_tmp)
-            prev_head_tmp = new_pose['heading']
-            pose['heading'] = new_pose['heading'] - estimated_rot_err
-            pose['v'] = new_pose['v']
-            pose['w'] = new_pose['w']
-    pose['x'] *= FEET_TO_METER
-    pose['y'] *= FEET_TO_METER
+    new_pose['x'] *= FEET_TO_METER
+    new_pose['y'] *= FEET_TO_METER
+    if pose is None:
+        pose = new_pose
+        prev_head_tmp = pose['heading']
+    else:
+        pose_queue.append(new_pose)
+        if len(pose_queue) == VIDEO_DELAY + 1:
+            new_pose = pose_queue.pop(0)
+        dx = new_pose['x'] - pose['x']
+        dy = new_pose['y'] - pose['y']
+        pose['x'] += dx * np.cos(estimated_rot_err) + dy * np.sin(estimated_rot_err)
+        pose['y'] += dy * np.cos(estimated_rot_err) - dx * np.sin(estimated_rot_err)
+        print("raw pose:", new_pose)
+        print("heading change:", new_pose['heading'] - prev_head_tmp)
+        prev_head_tmp = new_pose['heading']
+        pose['heading'] = new_pose['heading'] - estimated_rot_err
+        pose['v'] = new_pose['v']
+        pose['w'] = new_pose['w']
 
     marked_im = test_im.copy()
 
@@ -247,6 +267,9 @@ while True:
     #deriv = np.array(50 * (np.abs(cv2.Laplacian(cv2.GaussianBlur(marked_im, (0, 0), 0.5), cv2.CV_64F, ksize=3)) > 100), dtype=np.uint8)
     deriv = cv2.Canny(marked_im, 150, 300) // 2
     
+    cam_pose = get_camera_pose(pose)
+    cam_inv = se3.inv(cam_pose)
+
     prev_transform_lines = []
     if prev_lines is not None:
         for p1, p2 in prev_lines:
@@ -262,7 +285,6 @@ while True:
         plot_lines(deriv, lines, 255)
         print(deriv.shape)
         tracked_points = []
-        cam_pose = get_camera_pose(pose)
         for x, y, z, x_im, y_im in plot_points:
             transformed_point = se3.apply(cam_pose, (x, y, z))
             tracked_points.append(transformed_point)
@@ -331,7 +353,6 @@ while True:
         plot_lines(disp_map, scaled_lines, (0, 0, 255))
         plot_lines(new_lines, scaled_lines, (255, 255, 255))
 
-    cam_inv = se3.inv(cam_pose)
     if prev_points is not None:
         for point in prev_points:
             x_im, y_im = project_point(cam_inv, point)
@@ -351,8 +372,11 @@ while True:
                                   pose_y + 100*np.sin(min_angle))), (255, 0, 0))
     cv2.imshow("map", disp_map)
     cv2.imshow("before", deriv / 200)
-    cv2.imshow("marked", marked_im)
-    key = cv2.waitKeyEx(0)
+    #cv2.imshow("marked", marked_im)
+    if camera:
+        key = cv2.waitKeyEx(1)
+    else:
+        key = cv2.waitKeyEx(0)
     if key == 65361:
         # left arrow
         if i > 0:
