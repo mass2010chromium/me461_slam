@@ -12,5 +12,6 @@ server
 serial_test
 web/server.log
 .webserver.video
+.slam.map
 __pycache__
 slam

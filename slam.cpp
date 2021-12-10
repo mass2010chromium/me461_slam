@@ -256,6 +256,22 @@ static inline void map_scale(double* dest, double* src) {
     dest[1] = -src[1] * map_scaling + map_center;
 }
 
+char* map_file(std::string filename, int open_flags, size_t map_size) {
+    cout << "Mapping file " << filename << endl;
+    int mmap_file = open(filename.c_str(), open_flags, 0777);
+    if (mmap_file == -1) {
+        perror("open mmap file failure");
+        return NULL;
+    }
+    ftruncate(mmap_file, map_size);
+    char* ret = (char*) mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED_VALIDATE, mmap_file, 0);
+    if (ret == NULL) {
+        perror("mmap failure");
+        return NULL;
+    }
+    return ret;
+}
+
 int main(int argc, char** argv)
 {
     std::ifstream t("calibration/intrinsics.json");
@@ -294,6 +310,11 @@ int main(int argc, char** argv)
 
     cv::VideoCapture camera;
     char* image_buffer;
+    char* map_buffer;
+    map_buffer = map_file(".slam.map", O_RDWR | O_CREAT, 1000000);
+    if (map_buffer == NULL) {
+        return 1;
+    }
     bool camera_mode = false;
     if (argc > 1 && std::string(argv[1]) == "--camera") {
         camera_mode = true;
@@ -301,14 +322,8 @@ int main(int argc, char** argv)
         camera.set(cv::CAP_PROP_BUFFERSIZE, 1);
     }
     else {
-        int mmap_file = open(".webserver.video", O_RDWR);
-        if (mmap_file == -1) {
-            perror("open mmap file failure");
-            return 1;
-        }
-        image_buffer = (char*) mmap(NULL, 1000000, PROT_READ | PROT_WRITE, MAP_SHARED_VALIDATE, mmap_file, 0);
+        image_buffer = map_file(".webserver.video", O_RDWR, 1000000);
         if (image_buffer == NULL) {
-            perror("mmap failure");
             return 1;
         }
     }
@@ -558,7 +573,7 @@ int main(int argc, char** argv)
         cv::line(disp_map, center, _Point(max_pt), {255, 0, 0});
         double min_pt[2] = {pose_x + 100 * cos(min_angle),
                             pose_y + 100 * sin(min_angle)};
-        map_scale(min_pt, max_pt);
+        map_scale(min_pt, min_pt);
         cv::line(disp_map, center, _Point(max_pt), {255, 0, 0});
 
         Mat tmp = observe_mask * 0.05;
@@ -582,6 +597,9 @@ int main(int argc, char** argv)
             break;
         }
 
+        size_t nbytes = (map_img.dataend - map_img.datastart) * sizeof(uchar);
+        cout << nbytes << endl;
+        memcpy(map_buffer, map_img.data, nbytes);
         auto end = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds = end-start;
         std::cout << "SPF: " << elapsed_seconds.count() <<  std::endl;
