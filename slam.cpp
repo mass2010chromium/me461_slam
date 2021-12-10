@@ -8,6 +8,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/mman.h>
 
 #include "dbscan.hpp"
 
@@ -146,14 +147,16 @@ void plot_lines(Mat& img, vector<vptr> lines, const cv::Scalar& color) {
 #define BUFFER_SIZE (2048*8)
 motion_dtype alloc_buffer[BUFFER_SIZE];
 int alloc_idx = 0;
-line_t fast_alloc_vec(size_t sz) {
+vptr fast_alloc_vec(size_t sz) {
     if (alloc_idx + sz >= BUFFER_SIZE) {
-        alloc_idx = 0;
+        alloc_idx = sz;
+        return alloc_buffer;
     }
     else {
+        vptr ret = alloc_buffer + alloc_idx;
         alloc_idx += sz;
+        return ret;
     }
-    return alloc_buffer + alloc_idx;
 }
 
 vector<line_t> split_image(const Mat& grad_img, vector<line_t>& prev_transform_lines) {
@@ -167,12 +170,12 @@ vector<line_t> split_image(const Mat& grad_img, vector<line_t>& prev_transform_l
         for (int i = h-1; i > -1; --i) {
             if (grad_img.at<char>(i, j)) {
                 target.at<char>(i, j) += 128;
+                break;
             }
         }
     }
 
     // imshow(target)
-    cv::imshow("target", target);
     vector<cv::Vec4i> match_lines;
     cv::HoughLinesP(target, match_lines, 5, 0.01, 50, 10, 10);
     vector<line_t> ret;
@@ -197,13 +200,12 @@ vector<line_t> split_image(const Mat& grad_img, vector<line_t>& prev_transform_l
     int num_clusters;
     vector<int> groups = dbscan(num_clusters, 125, 1, line_distance, data);
     vector<vector<vptr>> boxes;
-    vector<line_t> plots;
     for (int i = 0; i < match_lines.size(); ++i) {
         boxes.push_back(vector<vptr>());
     }
     for (int i = 0; i < match_lines.size(); ++i) {
         if (groups[i] == -1) {
-            plots.push_back(data[i]);
+            ret.push_back(data[i]);
         }
         else {
             vptr p1 = line_first(data[i]);
@@ -214,6 +216,7 @@ vector<line_t> split_image(const Mat& grad_img, vector<line_t>& prev_transform_l
     }
     for (auto& box_points : boxes) {
         int n_points = box_points.size();
+        if (n_points == 0) { continue; }
         Matrix<motion_dtype, Dynamic, 2> A(n_points, 2);
         Matrix<motion_dtype, Dynamic, 1> y_vals(n_points);
         motion_dtype min_x = box_points[0][0];
@@ -229,8 +232,8 @@ vector<line_t> split_image(const Mat& grad_img, vector<line_t>& prev_transform_l
 
         // NOTE: numerical issues maybe
         auto least_square_soln = (A.transpose() * A).ldlt().solve(A.transpose() * y_vals);
-        motion_dtype m = least_square_soln(1, 0);
-        motion_dtype b = least_square_soln(2, 0);
+        motion_dtype m = least_square_soln(0, 0);
+        motion_dtype b = least_square_soln(1, 0);
         motion_dtype left_y = min_x * m + b;
         motion_dtype right_y = max_x * m + b;
         if (left_y >= 0 && left_y < h && right_y >= 0 && right_y < h) {
@@ -253,7 +256,7 @@ static inline void map_scale(double* dest, double* src) {
     dest[1] = -src[1] * map_scaling + map_center;
 }
 
-int main()
+int main(int argc, char** argv)
 {
     std::ifstream t("calibration/intrinsics.json");
     std::stringstream buffer;
@@ -289,10 +292,29 @@ int main()
     camera_info.fov_x = pt.get<double>("fovx");
     camera_info.fov_y = pt.get<double>("fovy");
 
-    cv::VideoCapture camera(0);
+    cv::VideoCapture camera;
+    char* image_buffer;
+    bool camera_mode = false;
+    if (argc > 1 && std::string(argv[1]) == "--camera") {
+        camera_mode = true;
+        camera = cv::VideoCapture(0);
+        camera.set(cv::CAP_PROP_BUFFERSIZE, 1);
+    }
+    else {
+        int mmap_file = open(".webserver.video", O_RDWR);
+        if (mmap_file == -1) {
+            perror("open mmap file failure");
+            return 1;
+        }
+        image_buffer = (char*) mmap(NULL, 1000000, PROT_READ | PROT_WRITE, MAP_SHARED_VALIDATE, mmap_file, 0);
+        if (image_buffer == NULL) {
+            perror("mmap failure");
+            return 1;
+        }
+    }
     cv::namedWindow("raw", cv::WINDOW_AUTOSIZE);
-    cv::namedWindow("target", cv::WINDOW_AUTOSIZE);
-    cv::namedWindow("grad", cv::WINDOW_AUTOSIZE);
+    //cv::namedWindow("target", cv::WINDOW_AUTOSIZE);
+    //cv::namedWindow("grad", cv::WINDOW_AUTOSIZE);
     cv::namedWindow("map", cv::WINDOW_AUTOSIZE);
     const double FEET_TO_METER = 0.3048;
 
@@ -301,8 +323,8 @@ int main()
     vector<line_t> prev_lines;
 
     // map_w x map_w 3-channel 8-bit image, initial value 255
-    Mat map_img(map_w, map_w, CV_8UC3, 255);
-    Mat observe_mask(map_w, map_w, CV_8UC1);
+    Mat map_img(map_w, map_w, CV_8UC3, {255, 255, 255});
+    Mat observe_mask(map_w, map_w, CV_32FC1);
     Mat disp_map(map_w, map_w, CV_8UC3);
     Mat circle_mask(map_w, map_w, CV_32FC1);
     Mat new_lines(map_w, map_w, CV_8UC3);
@@ -314,7 +336,7 @@ int main()
     std::deque<double*> pose_queue;
     const size_t VIDEO_DELAY = 1;
 
-    Mat disp;
+    Mat disp(480, 640, CV_8UC3);
     Mat undistort;
     Mat deriv;
 
@@ -335,7 +357,13 @@ int main()
             pose_gotten = true;
         });
         client.io_service->run();
-        bool res = camera.read(disp);
+        if (camera_mode) {
+            bool res = camera.read(disp);
+        }
+        else {
+            size_t nbytes = (disp.dataend - disp.datastart) * sizeof(uchar);
+            memcpy(disp.data, image_buffer, nbytes);
+        }
         //cv::cvtColor(disp, disp, cv::COLOR_BGR2GRAY);
         cv::undistort(disp, undistort, camera_mat, distortion);
 
@@ -343,14 +371,19 @@ int main()
         ptree pt;
         read_json(pose_info, pt);
         motion_dtype* new_pose = (motion_dtype*) malloc(5*sizeof(double));
-        new_pose[0] = pt.get<double>("x");
-        new_pose[1] = pt.get<double>("y");
+        new_pose[0] = pt.get<double>("x") * FEET_TO_METER;
+        new_pose[1] = pt.get<double>("y") * FEET_TO_METER;
         new_pose[2] = pt.get<double>("heading");
-        new_pose[3] = pt.get<double>("v");
+        new_pose[3] = pt.get<double>("v") * FEET_TO_METER;
         new_pose[4] = pt.get<double>("w");
 
         if (pose == NULL) {
             pose = new_pose;
+            motion_dtype scratch[2];
+            scratch[0] = pose[0];
+            scratch[1] = pose[1];
+            map_scale(scratch, scratch);
+            cv::circle(map_img, _Point(scratch), map_scaling * 0.5, {0, 0, 0}, -1);
             prev_head_tmp = pose[2];
         }
         else {
@@ -399,14 +432,13 @@ int main()
         }
 
         vector<line_t> lines = split_image(deriv, prev_transform_lines);
-
-        observe_mask = 0;
-        disp_map = 0;
-        new_lines = 0;
+        
+        observe_mask = 0.0;
+        disp_map = map_img.clone();
+        new_lines = (char)0;
         vector<line_t> proj_lines;
         if (lines.size() > 0) {
             plot_lines(deriv, lines, 255);
-            // plot tracked points
             
             vector<line_t> scaled_lines;
             for (line_t line : lines) {
@@ -424,6 +456,8 @@ int main()
                 map_scale(line_first(scaled_line), line_first(proj_line));
                 map_scale(line_second(scaled_line), line_second(proj_line));
                 scaled_lines.push_back(scaled_line);
+                line_t l = proj_line;
+                l = scaled_line;
             }
 
             motion_dtype pose_x = pose[0];
@@ -442,7 +476,7 @@ int main()
 
             const double max_depth = 1;
             const double scale = map_scaling * max_depth;
-            circle_mask = 0;
+            circle_mask = 0.0;
             cv::circle(circle_mask, _pose_px, scale*3, 0.25, -1);
             cv::circle(circle_mask, _pose_px, scale*2, 0.5, -1);
             cv::circle(circle_mask, _pose_px, scale*1, 1, -1);
@@ -487,14 +521,13 @@ int main()
                 vector<cv::Point> polygon_points;
                 polygon_points.push_back(_Point(start));
                 for (vptr p : points_angles) {
-                    polygon_points.push_back(_Point(p));
+                    polygon_points.push_back(_Point(p+1));
                 }
                 polygon_points.push_back(_Point(end));
                 polygon_points.push_back(_pose_px);
                 cv::fillPoly(observe_mask, polygon_points, 1);
-                observe_mask *= circle_mask;
+                observe_mask = observe_mask.mul(circle_mask);
             }
-            // imshow observe mask
             plot_lines(disp_map, scaled_lines, {0, 0, 255});
             plot_lines(new_lines, scaled_lines, {255, 255, 255});
         }
@@ -528,24 +561,26 @@ int main()
         map_scale(min_pt, max_pt);
         cv::line(disp_map, center, _Point(max_pt), {255, 0, 0});
 
+        Mat tmp = observe_mask * 0.05;
+        cv::cvtColor(tmp, tmp, cv::COLOR_GRAY2BGR);
+        Mat tmp3;
+        cv::multiply(tmp, map_img, tmp3, 1, CV_8UC3);
+        cv::subtract(map_img, tmp3, tmp, Mat(), CV_8UC3);
+        //cv::imshow("target", tmp3);
+        Mat tmp2 = observe_mask.clone();
+        cv::cvtColor(tmp2, tmp2, cv::COLOR_GRAY2BGR);
+        cv::multiply(tmp2, new_lines, tmp3, 1, CV_8UC3);
+        cv::add(tmp, tmp3, map_img, Mat(), CV_8UC3);
+
+        prev_lines = proj_lines;
+
         cv::imshow("raw", disp);
-        cv::imshow("grad", deriv);
+        //cv::imshow("grad", deriv);
         cv::imshow("map", disp_map);
         int key = cv::waitKeyEx(1);
         if (key == 27 || key == 'q') {
             break;
         }
-
-        Mat tmp = observe_mask * 0.05;
-        cv::cvtColor(tmp, tmp, cv::COLOR_GRAY2BGR);
-        tmp = tmp.mul(map_img);
-        map_img -= tmp;
-        Mat tmp2 = observe_mask.clone();
-        cv::cvtColor(tmp2, tmp2, cv::COLOR_GRAY2BGR);
-        tmp2 = tmp2.mul(new_lines);
-        map_img += tmp2;
-
-        prev_lines = proj_lines;
 
         auto end = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds = end-start;

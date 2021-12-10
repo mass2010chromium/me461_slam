@@ -1,12 +1,18 @@
 #include <simple-web-server/server_http.hpp>
 #include <future>
 
+#include <unistd.h>
+#include <sys/mman.h>
+
 // Added for the json-example
 #define BOOST_SPIRIT_THREADSAFE
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
 
 #include <boost/lockfree/queue.hpp>
+
+#include <opencv2/opencv.hpp>
+#include <opencv2/videoio.hpp>
 
 // Added for the default_resource example
 #include <algorithm>
@@ -55,6 +61,10 @@ int main() {
   // 1 thread is usually faster than several threads
   HttpServer server;
   server.config.port = 8080;
+
+  // We're gonna "serve" camera data through an mmap'd file.
+  cv::VideoCapture camera(0);
+  camera.set(cv::CAP_PROP_BUFFERSIZE, 1);
 
   // GET-example for the path /info
   // Responds with request-information
@@ -274,6 +284,22 @@ int main() {
       }
     }
   });
+
+  cv::Mat m;
+  // Image is 480x640x3 bytes.
+  int mmap_file = open(".webserver.video", O_CREAT | O_RDWR, 0777);
+  ftruncate(mmap_file, 1000000);
+  char* buffer = (char*) mmap(NULL, 1000000, PROT_READ | PROT_WRITE, MAP_SHARED_VALIDATE, mmap_file, 0);
+  if (buffer == NULL) {
+    perror("mmap failure");
+  }
+  else {
+    while (1) {
+      bool res = camera.read(m);
+      size_t nbytes = (m.dataend - m.datastart) * sizeof(uchar);
+      memcpy(buffer, m.data, nbytes);
+    }
+  }
 
   server_thread.join();
 }

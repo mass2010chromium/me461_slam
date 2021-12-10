@@ -11,3 +11,6 @@ calibration/echo_pose
 server
 serial_test
 web/server.log
+.webserver.video
+__pycache__
+slam
