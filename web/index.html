@@ -69,7 +69,7 @@
                            .attr('x2', xScale(dat.x + pointer_dist * Math.cos(dat.heading)))
                            .attr('y2', yScale(dat.y + pointer_dist * Math.sin(dat.heading)));
 
-                        const v_command = joy.GetY() / 100.0;
+                        const v_command = joy.GetY() / 500.0;
                         const w_command = -joy.GetX() / 100.0;
                         if (v_command != 0 || w_command != 0) {
                             let data = { v: v_command, w: w_command };

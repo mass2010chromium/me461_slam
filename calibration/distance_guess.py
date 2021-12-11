@@ -96,6 +96,7 @@ def point_to_line(point, line):
         return vo.norm(pointvec2), area / vo.norm(linevec)
     dist = area / vo.norm(linevec)
     return dist, dist
+
 def line_distance(l1, l2):
     data = np.array((
         point_to_line(l1[:2], l2),
@@ -103,7 +104,7 @@ def line_distance(l1, l2):
         point_to_line(l2[:2], l1),
         point_to_line(l2[2:], l1)
     ))
-    return min(data[:, 0])*5 + max(data[:, 1])
+    return min(data[:, 0])*3 + max(data[:, 1])
 
 dbscan = cluster.DBSCAN(eps=125, metric=line_distance, min_samples=1)
 
@@ -215,9 +216,10 @@ end_frame = 254
 i = start_frame
 
 map_w = 400
-map_img = np.ones((map_w, map_w, 3), dtype=np.uint8)* 255
 map_center = map_w // 2
 map_scaling = 25
+map_img = np.ones((map_w, map_w, 3), dtype=np.uint8)* 255
+cv2.circle(map_img, (map_center, map_center), int(0.5*map_scaling), (0, 0, 0), -1)
 def map_scale(pt):
     return int(pt[0] * map_scaling + map_center), int(-pt[1] * map_scaling + map_center)
 
@@ -234,7 +236,7 @@ while True:
         ret, _test_im = cam.read()
     else:
         _test_im = cv2.imread(folder + "/capture_{:06}.png".format(i), cv2.IMREAD_GRAYSCALE)
-    test_im = cv2.undistort(_test_im, camera_mat, camera_dist)
+    test_im = _test_im#cv2.undistort(_test_im, camera_mat, camera_dist)
     if camera:
         new_pose = json.loads(urllib.request.urlopen("http://localhost:8080/pose").read())
     else:
@@ -372,7 +374,7 @@ while True:
                                   pose_y + 100*np.sin(min_angle))), (255, 0, 0))
     cv2.imshow("map", disp_map)
     cv2.imshow("before", deriv / 200)
-    #cv2.imshow("marked", marked_im)
+    cv2.imshow("marked", marked_im)
     if camera:
         key = cv2.waitKeyEx(1)
     else:

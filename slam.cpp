@@ -248,9 +248,9 @@ vector<line_t> split_image(const Mat& grad_img, vector<line_t>& prev_transform_l
     return ret;
 }
 
-const double map_w = 400;
-const double map_center = map_w/2;
-const double map_scaling = 25;
+double map_w;
+double map_center;
+double map_scaling;
 static inline void map_scale(double* dest, double* src) {
     dest[0] = src[0] * map_scaling + map_center;
     dest[1] = -src[1] * map_scaling + map_center;
@@ -272,17 +272,22 @@ char* map_file(std::string filename, int open_flags, size_t map_size) {
     return ret;
 }
 
-int main(int argc, char** argv)
-{
-    std::ifstream t("calibration/intrinsics.json");
+/*
+ * Convenience function for reading json from filename.
+ */
+void read_json_fname(const std::string fname, ptree& pt) {
+    std::ifstream t(fname);
     std::stringstream buffer;
     buffer << t.rdbuf();
-    ptree pt;
     read_json(buffer, pt);
+}
+
+void read_intrinsics(const std::string intrinsics_fname,
+                     vector<double>& distortion, Mat& camera_mat, CameraInfo& camera_info) {
+    ptree pt;
+    read_json_fname(intrinsics_fname, pt);
     auto json_mat = pt.get_child("matrix");
     auto json_distort = pt.get_child("distortion");
-    Mat camera_mat = Mat::zeros(3, 3, CV_64F);
-    vector<double> distortion;
 
     for (const auto& _distort : json_distort) {
         for (const auto& node : _distort.second) {
@@ -307,6 +312,18 @@ int main(int argc, char** argv)
     camera_info.fy = camera_mat.at<double>(1, 1);
     camera_info.fov_x = pt.get<double>("fovx");
     camera_info.fov_y = pt.get<double>("fovy");
+}
+
+int main(int argc, char** argv)
+{
+    Mat camera_mat = Mat::zeros(3, 3, CV_64F);
+    vector<double> distortion;
+    read_intrinsics("calibration/intrinsics.json", distortion, camera_mat, camera_info);
+    ptree map_json;
+    read_json_fname("map_info.json", map_json);
+    map_w = map_json.get<double>("map_size");
+    map_center = map_w / 2;
+    map_scaling = map_json.get<double>("map_scale");
 
     cv::VideoCapture camera;
     char* image_buffer;
@@ -316,6 +333,7 @@ int main(int argc, char** argv)
         return 1;
     }
     bool camera_mode = false;
+    bool display_images = true;
     if (argc > 1 && std::string(argv[1]) == "--camera") {
         camera_mode = true;
         camera = cv::VideoCapture(0);
@@ -326,12 +344,16 @@ int main(int argc, char** argv)
         if (image_buffer == NULL) {
             return 1;
         }
+        if (argc > 1 && std::string(argv[1]) == "--quiet") {
+            display_images = false;
+        }
     }
-    cv::namedWindow("raw", cv::WINDOW_AUTOSIZE);
-    //cv::namedWindow("target", cv::WINDOW_AUTOSIZE);
-    //cv::namedWindow("grad", cv::WINDOW_AUTOSIZE);
-    cv::namedWindow("map", cv::WINDOW_AUTOSIZE);
-    const double FEET_TO_METER = 0.3048;
+    if (display_images) {
+        cv::namedWindow("raw", cv::WINDOW_AUTOSIZE);
+        //cv::namedWindow("target", cv::WINDOW_AUTOSIZE);
+        //cv::namedWindow("grad", cv::WINDOW_AUTOSIZE);
+        cv::namedWindow("map", cv::WINDOW_AUTOSIZE);
+    }
 
     //double prev_pose[5];
     //vector<line_t> prev_points;
@@ -349,13 +371,14 @@ int main(int argc, char** argv)
     motion_dtype* pose = NULL;
     double prev_head_tmp;
     std::deque<double*> pose_queue;
-    const size_t VIDEO_DELAY = 1;
+    const size_t VIDEO_DELAY = 0;
 
     Mat disp(480, 640, CV_8UC3);
     Mat undistort;
     Mat deriv;
 
-    for (;;) {
+    size_t frame = 0;
+    for (;;++frame) {
         auto start = std::chrono::system_clock::now();
 
         HttpClient client("localhost:8080");
@@ -385,11 +408,11 @@ int main(int argc, char** argv)
         while (!pose_gotten) {};
         ptree pt;
         read_json(pose_info, pt);
-        motion_dtype* new_pose = (motion_dtype*) malloc(5*sizeof(double));
-        new_pose[0] = pt.get<double>("x") * FEET_TO_METER;
-        new_pose[1] = pt.get<double>("y") * FEET_TO_METER;
+        vptr new_pose =  (vptr) malloc(5*sizeof(motion_dtype));
+        new_pose[0] = pt.get<double>("x");
+        new_pose[1] = pt.get<double>("y");
         new_pose[2] = pt.get<double>("heading");
-        new_pose[3] = pt.get<double>("v") * FEET_TO_METER;
+        new_pose[3] = pt.get<double>("v");
         new_pose[4] = pt.get<double>("w");
 
         if (pose == NULL) {
@@ -415,8 +438,8 @@ int main(int argc, char** argv)
             double _sin = sin(estimated_rot_err);
             pose[0] += delta[0] * _cos + delta[1] * _sin;
             pose[1] += delta[1] * _cos - delta[0] * _sin;
-            printf("raw pose: %f %f %f\n", new_pose[0], new_pose[1], new_pose[2]);
-            printf("heading change %f\n", new_pose[2] - prev_head_tmp);
+            //printf("raw pose: %f %f %f\n", new_pose[0], new_pose[1], new_pose[2]);
+            //printf("heading change %f\n", new_pose[2] - prev_head_tmp);
             prev_head_tmp = new_pose[2];
             pose[2] = new_pose[2] - estimated_rot_err;
             pose[3] = new_pose[3];
@@ -574,9 +597,9 @@ int main(int argc, char** argv)
         double min_pt[2] = {pose_x + 100 * cos(min_angle),
                             pose_y + 100 * sin(min_angle)};
         map_scale(min_pt, min_pt);
-        cv::line(disp_map, center, _Point(max_pt), {255, 0, 0});
+        cv::line(disp_map, center, _Point(min_pt), {255, 0, 0});
 
-        Mat tmp = observe_mask * 0.05;
+        Mat tmp = observe_mask * 0.10;
         cv::cvtColor(tmp, tmp, cv::COLOR_GRAY2BGR);
         Mat tmp3;
         cv::multiply(tmp, map_img, tmp3, 1, CV_8UC3);
@@ -589,20 +612,30 @@ int main(int argc, char** argv)
 
         prev_lines = proj_lines;
 
-        cv::imshow("raw", disp);
-        //cv::imshow("grad", deriv);
-        cv::imshow("map", disp_map);
-        int key = cv::waitKeyEx(1);
-        if (key == 27 || key == 'q') {
-            break;
+        if (display_images) {
+            cv::imshow("raw", disp);
+            //cv::imshow("grad", deriv);
+            cv::imshow("map", disp_map);
+            int key = cv::waitKeyEx(1);
+            if (key == 27 || key == 'q') {
+                break;
+            }
         }
 
         size_t nbytes = (map_img.dataend - map_img.datastart) * sizeof(uchar);
-        cout << nbytes << endl;
         memcpy(map_buffer, map_img.data, nbytes);
         auto end = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds = end-start;
         std::cout << "SPF: " << elapsed_seconds.count() <<  std::endl;
+        std::stringstream filename("calibration/cpp_log/capture_", std::ios_base::app | std::ios_base::out);
+        filename << std::setfill('0') << std::setw(6) << frame << ".png";
+        cv::imwrite(filename.str(), disp);
+
+        std::stringstream pose_fname("calibration/cpp_log/pose_", std::ios_base::app | std::ios_base::out);
+        pose_fname << std::setfill('0') << std::setw(6) << frame << ".json";
+        std::ofstream pose_file(pose_fname.str());
+        pose_file << pose_info.str();
+        pose_file.close();
     }
     return 0;
 }

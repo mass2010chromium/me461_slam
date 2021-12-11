@@ -78,8 +78,7 @@ int main()
             client.io_service->run();
             std::stringstream filename("cpp_log/capture_", std::ios_base::app | std::ios_base::out);
             bool res = camera.read(image);
-            cv::cvtColor(image, image, cv::COLOR_BGR2GRAY);
-            cv::undistort(image, undistort, camera_mat, distortion);
+            //cv::undistort(image, undistort, camera_mat, distortion);
             filename << std::setfill('0') << std::setw(6) << frame << ".png";
             cv::imwrite(filename.str(), image);
 

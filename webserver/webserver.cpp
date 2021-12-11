@@ -32,6 +32,9 @@ using namespace boost::property_tree;
 
 using HttpServer = SimpleWeb::Server<SimpleWeb::HTTP>;
 
+const float FEET_TO_METER = 0.3048;
+const float METER_TO_FEET = 3.2808399;
+
 struct RobotInfo {
     float x;
     float y;
@@ -44,17 +47,26 @@ typedef struct RobotInfo RobotInfo;
 RobotInfo robot_info;
 
 struct RobotCommand {
-    RobotCommand() : cmd_v(0), cmd_w(0) {}
-    RobotCommand(float v, float w) : cmd_v(v), cmd_w(w) {}
-
+  RobotCommand() : cmd_v(0), cmd_w(0) {}
+  RobotCommand(float v, float w) : cmd_v(v), cmd_w(w) {}
+  RobotCommand(float x, float y, float t) : cmd_x(x), cmd_y(y), cmd_heading(t) {}
+  union {
     float cmd_v;
+    float cmd_x;
+  };
+  union {
     float cmd_w;
+    float cmd_y;
+  };
+  float cmd_heading;
 };
 typedef struct RobotCommand RobotCommand;
 
-// lol single threaded server go brr
 boost::lockfree::queue<RobotCommand> command_queue(128);
+boost::lockfree::queue<RobotCommand> target_queue(16);
+RobotCommand current_target(0, 0, 0);
 
+// lol single threaded server go brr
 int main() {
   // HTTP-server at port 8080 using 1 thread
   // Unless you do more heavy non-threaded processing in the resources,
@@ -84,6 +96,31 @@ int main() {
       stream << field.first << ": " << field.second << "<br>";
 
     response->write(stream);
+  };
+  
+  server.resource["^/target$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
+    stringstream stream;
+    bool new_request = target_queue.pop(current_target);
+    stream << "{\"x\":" << current_target.cmd_x
+           << ",\"y\":" << current_target.cmd_y
+           << ",\"heading\":" << current_target.cmd_heading
+           << ",\"new_request\":" << new_request << "}";
+    response->write(stream);
+  };
+
+  server.resource["^/target$"]["POST"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
+    try {
+      ptree pt;
+      read_json(request->content, pt);
+      float cmd_x = pt.get<float>("x");
+      float cmd_y = pt.get<float>("y");
+      float cmd_heading = pt.get<float>("t");
+      target_queue.push(RobotCommand(cmd_x, cmd_y, cmd_heading));
+      response->write("POSE Command recieved");
+    }
+    catch (const exception& e) {
+      response->write(SimpleWeb::StatusCode::client_error_bad_request, e.what());
+    }
   };
   
   server.resource["^/pose$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
@@ -253,7 +290,7 @@ int main() {
       RobotCommand new_command;
       if (command_queue.pop(new_command)) {
         //cout << "got cmd " << new_command.cmd_v << ", " << new_command.cmd_w << endl;
-        *((float*)send_buf) = new_command.cmd_v;
+        *((float*)send_buf) = new_command.cmd_v * METER_TO_FEET;
         *((float*)(send_buf + 4)) = new_command.cmd_w;
         sd_writen(send_buf, 9);
       }
@@ -276,10 +313,10 @@ int main() {
           index = new_index;
       }
       else {
-        robot_info.x = *((float*) (recv_buf));
-        robot_info.y = *((float*) (recv_buf + 4));
+        robot_info.x = *((float*) (recv_buf)) * FEET_TO_METER;
+        robot_info.y = *((float*) (recv_buf + 4)) * FEET_TO_METER;
         robot_info.heading = *((float*) (recv_buf + 8));
-        robot_info.v = *((float*) (recv_buf + 12));
+        robot_info.v = *((float*) (recv_buf + 12)) * FEET_TO_METER;
         robot_info.w = *((float*) (recv_buf + 16));
       }
     }
