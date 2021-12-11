@@ -121,17 +121,9 @@ def line_distance(l1, l2):
         point_to_segment(l2[:2], l1),
         point_to_segment(l2[2:], l1)
     ))
-    angle1 = math.atan2(l1[3] - l1[1], l1[2] - l1[0])
-    if angle1 < 2*math.pi:
-        angle1 += 2*math.pi
-    angle2 = math.atan2(l2[3] - l2[1], l2[2] - l2[0])
-    if angle2 < 2*math.pi:
-        angle2 += 2*math.pi
-    max_angle = max(angle1, angle2)
-    min_angle = min(angle1, angle2)
-    angle_err = max_angle - min_angle
-    angle_err2 = 2*math.pi - angle_err
-    angle_err = min(angle_err, angle_err2)
+    angle1 = normalize_angle(math.atan2(l1[3] - l1[1], l1[2] - l1[0]))
+    angle2 = normalize_angle(math.atan2(l2[3] - l2[1], l2[2] - l2[0]))
+    angle_err = angle_distance(angle1, angle2)
     closest_dist = min(data[:, 0])
     return closest_dist * (1 + angle_err) + angle_err * (1 + closest_dist)
 

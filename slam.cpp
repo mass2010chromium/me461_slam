@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 
 #include "dbscan.hpp"
+#include "utils.hpp"
 
 #include <motionlib/vectorops.h>
 #include <motionlib/so3.h>
@@ -62,21 +63,6 @@ static inline void transform_point(vptr_r out, const vptr_r in) {
     out[2] = z_real;
 }
 
-static inline motion_dtype normalize_angle(motion_dtype angle) {
-    angle = angle % (2*M_PI);
-    if(angle < 0) {
-        angle += 2*M_PI;
-    }
-}
-
-// Project a point in real space into the given camera pose.
-static inline void project_point(vptr_r out, const tptr_r cam_pose, const vptr_r point) {
-    motion_dtype p[3];
-    __se3_apply(p, cam_pose, point);
-    out[0] = camera_info.mid_x - p[1] * camera_info.fx / p[0];
-    out[1] = camera_info.mid_y - z_real * camera_info.fy / p[0];
-}
-
 // Get se3 pose of camera, given robot pose.
 static inline void get_camera_pose(tptr_r ret, const vptr_r robot_pose) {
     static const motion_dtype axis[3] = {0, 0, 1};
@@ -89,56 +75,6 @@ static inline void get_camera_pose(tptr_r ret, const vptr_r robot_pose) {
     __so3_rotation(ret, axis, heading);
     __so3_apply(ret+9, ret, camera_pos);
     __vo_add(ret+9, ret+9, tmp, 3);
-}
-
-#define line_t motion_dtype*
-#define line_first(l) (l)
-#define line_second(l) ((l)+2)
-
-bool line_cmp(line_t i, line_t j) { return (i[0] < j[0]); }
-
-// Get distance between point and line, in two ways.
-// First value is the distance to segment.
-// Second value is distance to the infinite line.
-static inline void point_to_line(vptr_r ret, const vptr_r point, const line_t line) {
-    const vptr corner1 = line_first(line);
-    const vptr corner2 = line_second(line);
-    motion_dtype linevec[2];
-    motion_dtype pointvec[2];
-    __vo_subv(linevec, corner2, corner1, 2);
-    __vo_subv(pointvec, point, corner1, 2);
-    motion_dtype area = __vo_dot(linevec, pointvec, 2);
-    if (area < 0) {
-        // Point is opposite corner1 w.r.t. corner2.
-        ret[0] = __vo_norm(pointvec, 2);
-        ret[1] = -area / __vo_norm(linevec, 2);
-        return;
-    }
-    motion_dtype pointvec2[2];
-    __vo_subv(pointvec2, point, corner2, 2);
-    if (__vo_dot(linevec, pointvec2, 2) > 0) {
-        // Point is opposite corner2 w.r.t. corner1.
-        ret[0] = __vo_norm(pointvec2, 2);
-        ret[1] = area / __vo_norm(linevec, 2);
-        return;
-    }
-    ret[0] = area / __vo_norm(linevec, 2);
-    ret[1] = ret[0];
-}
-
-motion_dtype line_distance(const line_t l1, const line_t l2) {
-    motion_dtype retvals[8];
-    point_to_line(retvals + 0, line_first(l1), l2);
-    point_to_line(retvals + 2, line_second(l1), l2);
-    point_to_line(retvals + 4, line_first(l2), l1);
-    point_to_line(retvals + 6, line_second(l2), l1);
-    motion_dtype min_deviation = retvals[0];
-    motion_dtype max_deviation = retvals[1];
-    for (int i = 2; i < 8; i += 2) {
-        if (retvals[i] < min_deviation) { min_deviation = retvals[i]; }
-        if (retvals[i+1] > max_deviation) { max_deviation = retvals[i+1]; }
-    }
-    return min_deviation*5 + max_deviation;
 }
 
 static inline cv::Point _Point(vptr i) {
