@@ -2,13 +2,6 @@ cmake_minimum_required(VERSION 3.0)
 
 #set(CMAKE_BUILD_TYPE Debug)
 
-project( DisplayImage )
-find_package( OpenCV REQUIRED )
-find_package (Eigen3 3.3 REQUIRED NO_MODULE)
-include_directories( ${OpenCV_INCLUDE_DIRS} )
-add_executable( DisplayImage test.cpp )
-target_link_libraries( DisplayImage ${OpenCV_LIBS} Eigen3::Eigen )
-
 project( webserver )
 find_package( Threads REQUIRED )
 find_package( OpenCV REQUIRED )

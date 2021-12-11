@@ -1,7 +1,6 @@
 CMakeCache.txt
 CMakeFiles/
 *.swp
-DisplayImage
 *.o
 cmake_install.cmake
 Makefile

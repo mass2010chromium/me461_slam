@@ -212,7 +212,6 @@ def split_image(grad_img, prev_transform_lines):
     plot_lines(prev_mask, prev_transform_lines, 1)
     prev_mask *= grad_img
     _target += prev_mask[w-1:split_row-1:-1, :]
-    cv2.imshow("target", _target)
     target = _target#cv2.GaussianBlur(_target, (0, 0), 0.5) * 2
     match_lines = cv2.HoughLinesP(target, 5, 0.01, 50, minLineLength=10, maxLineGap=10)
     if match_lines is None:
@@ -220,6 +219,8 @@ def split_image(grad_img, prev_transform_lines):
         return []
     print(len(match_lines), "lines found")
     lines = [l[0] for l in match_lines[:50]]
+    plot_lines(target, lines, 255)
+    cv2.imshow("target", target)
 
     _target[:, :] = 0
     plots = lines
@@ -288,7 +289,7 @@ prev_lines = []
 prev_observe_mask = None
 
 VIDEO_DELAY = 0
-start_frame = 10
+start_frame = 60
 end_frame = 254
 frame_count = start_frame
 
@@ -367,13 +368,13 @@ while True:
     disp_map = map_img.copy()
     new_lines = np.zeros(map_img.shape, dtype=np.uint8)
 
-    plot_lines(deriv, lines, 255)
+    #plot_lines(deriv, lines, 255)
     #print(deriv.shape)
     tracked_points = []
     for x, y, z, x_im, y_im in plot_points:
         transformed_point = se3.apply(cam_pose, (x, y, z))
         tracked_points.append(transformed_point)
-        marked_im = cv2.circle(marked_im, (x_im, y_im), 2, (255, 0, 0), 2)
+        #marked_im = cv2.circle(marked_im, (x_im, y_im), 2, (255, 0, 0), 2)
 
     proj_lines = []
     for line in lines:
@@ -588,7 +589,8 @@ while True:
         for point in prev_points:
             x_im, y_im = project_point(cam_inv, point)
             if x_im >= 0 and x_im < w and y_im >= 0 and y_im < h:
-                marked_im = cv2.circle(marked_im, (x_im, y_im), 5, (0, 0, 255), 2)
+                pass
+                #marked_im = cv2.circle(marked_im, (x_im, y_im), 5, (0, 0, 255), 2)
     draw_robot(disp_map, (pose_x, pose_y, heading))
     cv2.imshow("map", disp_map)
     cv2.imshow("before", deriv / 200)
