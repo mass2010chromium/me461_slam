@@ -344,8 +344,10 @@ int main(int argc, char** argv)
         if (image_buffer == NULL) {
             return 1;
         }
-        if (argc > 1 && std::string(argv[1]) == "--quiet") {
-            display_images = false;
+        if (argc > 1) {
+            if (std::string(argv[1]) == "--quiet") {
+                display_images = false;
+            }
         }
     }
     if (display_images) {
@@ -627,15 +629,15 @@ int main(int argc, char** argv)
         auto end = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds = end-start;
         std::cout << "SPF: " << elapsed_seconds.count() <<  std::endl;
-        std::stringstream filename("calibration/cpp_log/capture_", std::ios_base::app | std::ios_base::out);
-        filename << std::setfill('0') << std::setw(6) << frame << ".png";
-        cv::imwrite(filename.str(), disp);
-
-        std::stringstream pose_fname("calibration/cpp_log/pose_", std::ios_base::app | std::ios_base::out);
-        pose_fname << std::setfill('0') << std::setw(6) << frame << ".json";
-        std::ofstream pose_file(pose_fname.str());
-        pose_file << pose_info.str();
-        pose_file.close();
+//        std::stringstream filename("calibration/cpp_log/capture_", std::ios_base::app | std::ios_base::out);
+//        filename << std::setfill('0') << std::setw(6) << frame << ".png";
+//        cv::imwrite(filename.str(), disp);
+//
+//        std::stringstream pose_fname("calibration/cpp_log/pose_", std::ios_base::app | std::ios_base::out);
+//        pose_fname << std::setfill('0') << std::setw(6) << frame << ".json";
+//        std::ofstream pose_file(pose_fname.str());
+//        pose_file << pose_info.str();
+//        pose_file.close();
     }
     return 0;
 }
