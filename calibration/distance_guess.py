@@ -64,7 +64,7 @@ def transform_point(cam_pt):
 
 def normalize_angle(angle):
     angle = angle % (2*math.pi)
-    if angle < -math.pi:
+    if angle < 0:
         angle += 2*math.pi
     return angle
 

@@ -62,6 +62,13 @@ static inline void transform_point(vptr_r out, const vptr_r in) {
     out[2] = z_real;
 }
 
+static inline motion_dtype normalize_angle(motion_dtype angle) {
+    angle = angle % (2*M_PI);
+    if(angle < 0) {
+        angle += 2*M_PI;
+    }
+}
+
 // Project a point in real space into the given camera pose.
 static inline void project_point(vptr_r out, const tptr_r cam_pose, const vptr_r point) {
     motion_dtype p[3];
