@@ -26,14 +26,6 @@ static inline motion_dtype angle_distance(motion_dtype a, motion_dtype b) {
     return err2;
 }
 
-// Project a point in real space into the given camera pose.
-static inline void project_point(vptr_r out, const tptr_r cam_pose, const vptr_r point) {
-    motion_dtype p[3];
-    __se3_apply(p, cam_pose, point);
-    out[0] = camera_info.mid_x - p[1] * camera_info.fx / p[0];
-    out[1] = camera_info.mid_y - z_real * camera_info.fy / p[0];
-}
-
 #define line_t motion_dtype*
 #define line_first(l) (l)
 #define line_second(l) ((l)+2)
@@ -83,5 +75,5 @@ motion_dtype line_distance(const line_t l1, const line_t l2) {
     motion_dtype angle1 = normalize_angle(atan2(l1[3] - l1[1], l1[2] - l1[0]));
     motion_dtype angle2 = normalize_angle(atan2(l2[3] - l2[1], l2[2] - l2[0]));
     motion_dtype angle_err = angle_distance(angle1, angle2);
-    return min_deviation * (1 + angle_err) + angle_err * (1 + closest_dist);
+    return min_deviation * (1 + angle_err) + angle_err * (1 + min_deviation);
 }

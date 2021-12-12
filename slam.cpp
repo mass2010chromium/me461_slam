@@ -63,6 +63,14 @@ static inline void transform_point(vptr_r out, const vptr_r in) {
     out[2] = z_real;
 }
 
+// Project a point in real space into the given camera pose.
+static inline void project_point(vptr_r out, const tptr_r cam_pose, const vptr_r point) {
+    motion_dtype p[3];
+    __se3_apply(p, cam_pose, point);
+    out[0] = camera_info.mid_x - p[1] * camera_info.fx / p[0];
+    out[1] = camera_info.mid_y - z_real * camera_info.fy / p[0];
+}
+
 // Get se3 pose of camera, given robot pose.
 static inline void get_camera_pose(tptr_r ret, const vptr_r robot_pose) {
     static const motion_dtype axis[3] = {0, 0, 1};
