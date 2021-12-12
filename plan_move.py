@@ -23,7 +23,7 @@ map_scale = map_info['map_scale']
 bound = (map_w / map_scale) / 2
 cap = SharedArray('.slam.map', (map_w,map_w,3), np.uint8)
 
-robot_radius = 0.4
+robot_radius = 0.2
 robot_radius_px = math.ceil(robot_radius * map_scale)
 robot_ksize = 2*robot_radius_px+1
 robot_kernel = np.zeros([robot_ksize, robot_ksize], dtype=np.uint8)
@@ -106,7 +106,7 @@ while True:
     position_json = json.loads(position_info)
     start_pose = (position_json['x'], position_json['y'])
     print("Recieved new target request", start_pose, end_pose, ", planning")
-    if vo.norm(vo.sub(end_pose, start_pose)) < 0.05:
+    if vo.norm(vo.sub(end_pose, start_pose)) < 0.1:
         print("Pure rotation")
         move_heading(target_info['heading'])
         continue

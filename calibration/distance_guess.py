@@ -145,9 +145,6 @@ def merge_lines(lines):
     if m > 0:
         return [min_x, min_y, max_x, max_y]
     return [min_x, max_y, max_x, min_y]
-    min_y = m * min_x + b
-    max_y = m * max_x + b
-    return [min_x, min_y, max_x, max_y]
 
 def dbscan_filter_lines(lines, existings, eps):
     dbscan = cluster.DBSCAN(eps, metric=line_distance, min_samples=1)

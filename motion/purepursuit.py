@@ -107,6 +107,7 @@ class PurePursuit:
         dx, dy = vo.sub(lookahead, center)
         direct_angle = atan2(dy, dx)
         target_angle = average_angle(direct_angle, lookahead_angle)
+        print(target_angle)
 
         limit_error = angle_diff_signed(heading, lookahead_angle)
         angle_error = angle_diff_signed(heading, target_angle)
@@ -115,7 +116,7 @@ class PurePursuit:
         angular_v = self.__kv * angle_error
         if abs(angular_v) > max_angular_v:
             angular_v = max_angular_v * angular_v / abs(angular_v)
-        trans_v = self.__speed / (1 + abs(limit_error) * self.__speed * 5)
+        trans_v = self.__speed / (1)# + abs(limit_error) * self.__speed/2)
         if abs(trans_v) > max_trans_v:
             trans_v = max_trans_v * trans_v / abs(trans_v)
 
@@ -136,7 +137,7 @@ if __name__ == "__main__":
 
     kv = 3
     radius = 0.2
-    speed = 0.1
+    speed = 0.2
     for path in [path1, path2]:
         follower = PurePursuit(path, radius, speed, kv)
         while True:

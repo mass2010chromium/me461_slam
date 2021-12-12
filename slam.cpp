@@ -10,8 +10,11 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 
-#include "dbscan.hpp"
+#include "types.h"
 #include "utils.hpp"
+#include "fast_alloc.hpp"
+#include "dbscan.hpp"
+#include "optimize.hpp"
 
 #include <motionlib/vectorops.h>
 #include <motionlib/so3.h>
@@ -29,11 +32,6 @@
 
 #include <simple-web-server/client_http.hpp>
 #include <future>
-
-#include <Eigen/Dense> 
-using Eigen::Matrix;
-using Eigen::Dynamic;
-using Eigen::VectorXd;
 
 using namespace boost::property_tree;
 using HttpClient = SimpleWeb::Client<SimpleWeb::HTTP>;
@@ -89,25 +87,43 @@ static inline cv::Point _Point(vptr i) {
     return cv::Point(i[0], i[1]);
 }
 
+motion_dtype map_w;
+motion_dtype map_center;
+motion_dtype map_scaling;
+static inline void map_scale(vptr dest, vptr src) {
+    dest[0] = src[0] * map_scaling + map_center;
+    dest[1] = -src[1] * map_scaling + map_center;
+}
+
 void plot_lines(Mat& img, vector<vptr> lines, const cv::Scalar& color) {
     for (vptr line : lines) {
         cv::line(img, _Point(line_first(line)), _Point(line_second(line)), color);
     }
 }
 
-#define BUFFER_SIZE (2048*8)
-motion_dtype alloc_buffer[BUFFER_SIZE];
-int alloc_idx = 0;
-vptr fast_alloc_vec(size_t sz) {
-    if (alloc_idx + sz >= BUFFER_SIZE) {
-        alloc_idx = sz;
-        return alloc_buffer;
-    }
-    else {
-        vptr ret = alloc_buffer + alloc_idx;
-        alloc_idx += sz;
-        return ret;
-    }
+void draw_robot(Mat& img, vptr pose, motion_dtype pointer_scale=0.5) {
+    motion_dtype pose_px[2];
+    map_scale(pose_px, pose);
+    motion_dtype heading = pose[2];
+    motion_dtype min_angle = heading - camera_info.fov_x/2;
+    motion_dtype max_angle = heading + camera_info.fov_x/2;
+    auto pose_px_pt = _Point(pose_px);
+    cv::circle(img, pose_px_pt, 5, {0, 255, 0}, 1);
+    motion_dtype scratch[2];
+    scratch[0] = pose_px[0] + pointer_scale * cos(heading);
+    scratch[1] = pose_px[1] + pointer_scale * sin(heading);
+    map_scale(scratch, scratch);
+    cv::line(img, pose_px_pt, _Point(scratch), {0, 255, 0});
+
+    const double fov_scale = 100;
+    scratch[0] = pose_px[0] + fov_scale * cos(min_angle);
+    scratch[1] = pose_px[1] + fov_scale * sin(min_angle);
+    map_scale(scratch, scratch);
+    cv::line(img, pose_px_pt, _Point(scratch), {255, 0, 0});
+    scratch[0] = pose_px[0] + fov_scale * cos(max_angle);
+    scratch[1] = pose_px[1] + fov_scale * sin(max_angle);
+    map_scale(scratch, scratch);
+    cv::line(img, pose_px_pt, _Point(scratch), {255, 0, 0});
 }
 
 vector<line_t> split_image(const Mat& grad_img, vector<line_t>& prev_transform_lines) {
@@ -148,63 +164,7 @@ vector<line_t> split_image(const Mat& grad_img, vector<line_t>& prev_transform_l
         new_line[3] = v[3];
         data[i] = new_line;
     }
-    int num_clusters;
-    vector<int> groups = dbscan(num_clusters, 125, 1, line_distance, data);
-    vector<vector<vptr>> boxes;
-    for (int i = 0; i < match_lines.size(); ++i) {
-        boxes.push_back(vector<vptr>());
-    }
-    for (int i = 0; i < match_lines.size(); ++i) {
-        if (groups[i] == -1) {
-            ret.push_back(data[i]);
-        }
-        else {
-            vptr p1 = line_first(data[i]);
-            vptr p2 = line_second(data[i]);
-            boxes[i].push_back(p1);
-            boxes[i].push_back(p2);
-        }
-    }
-    for (auto& box_points : boxes) {
-        int n_points = box_points.size();
-        if (n_points == 0) { continue; }
-        Matrix<motion_dtype, Dynamic, 2> A(n_points, 2);
-        Matrix<motion_dtype, Dynamic, 1> y_vals(n_points);
-        motion_dtype min_x = box_points[0][0];
-        motion_dtype max_x = box_points[0][0];
-        for (int i = 0; i < n_points; ++i) {
-            y_vals(i, 0) = box_points[i][1];
-            auto x = box_points[i][0];
-            A(i, 0) = x;
-            A(i, 1) = 1;
-            if (x < min_x) { min_x = x; }
-            if (x > max_x) { max_x = x; }
-        }
-
-        // NOTE: numerical issues maybe
-        auto least_square_soln = (A.transpose() * A).ldlt().solve(A.transpose() * y_vals);
-        motion_dtype m = least_square_soln(0, 0);
-        motion_dtype b = least_square_soln(1, 0);
-        motion_dtype left_y = min_x * m + b;
-        motion_dtype right_y = max_x * m + b;
-        if (left_y >= 0 && left_y < h && right_y >= 0 && right_y < h) {
-            line_t new_line = fast_alloc_vec(4);
-            new_line[0] = min_x;
-            new_line[1] = left_y;
-            new_line[2] = max_x;
-            new_line[3] = right_y;
-            ret.push_back(new_line);
-        }
-    }
-    return ret;
-}
-
-double map_w;
-double map_center;
-double map_scaling;
-static inline void map_scale(double* dest, double* src) {
-    dest[0] = src[0] * map_scaling + map_center;
-    dest[1] = -src[1] * map_scaling + map_center;
+    return data;
 }
 
 char* map_file(std::string filename, int open_flags, size_t map_size) {
@@ -310,7 +270,8 @@ int main(int argc, char** argv)
 
     //double prev_pose[5];
     //vector<line_t> prev_points;
-    vector<line_t> prev_lines;
+    vector<vptr> prev_lines;
+    vector<vptr> saved_lines;
 
     // map_w x map_w 3-channel 8-bit image, initial value 255
     Mat map_img(map_w, map_w, CV_8UC3, {255, 255, 255});
@@ -319,17 +280,19 @@ int main(int argc, char** argv)
     Mat circle_mask(map_w, map_w, CV_32FC1);
     Mat new_lines(map_w, map_w, CV_8UC3);
 
-    double estimated_rot_err;
+    motion_dtype estimated_rot_err;
 
     motion_dtype* pose = NULL;
     double prev_head_tmp;
-    std::deque<double*> pose_queue;
+    std::deque<vptr> pose_queue;
     const size_t VIDEO_DELAY = 0;
 
     Mat disp(480, 640, CV_8UC3);
     Mat undistort;
     Mat deriv;
 
+    int keyframe_count = 0;
+    const int KEYFRAME_MIN = 5;
     size_t frame = 0;
     for (;;++frame) {
         auto start = std::chrono::system_clock::now();
@@ -427,114 +390,125 @@ int main(int argc, char** argv)
         observe_mask = 0.0;
         disp_map = map_img.clone();
         new_lines = (char)0;
-        vector<line_t> proj_lines;
-        if (lines.size() > 0) {
-            plot_lines(deriv, lines, 255);
-            
-            vector<line_t> scaled_lines;
-            for (line_t line : lines) {
-                line[1] += height / 2;
-                line[3] += height / 2;
-                line_t proj_line = fast_alloc_vec(5);
-                motion_dtype scratch[3];
-                transform_point(scratch, line_first(line));
-                __se3_apply(line_first(proj_line), camera_pose, scratch);
-                transform_point(scratch, line_second(line));
-                __se3_apply(line_second(proj_line), camera_pose, scratch);
-                proj_lines.push_back(proj_line);
-
-                line_t scaled_line = fast_alloc_vec(4);
-                map_scale(line_first(scaled_line), line_first(proj_line));
-                map_scale(line_second(scaled_line), line_second(proj_line));
-                scaled_lines.push_back(scaled_line);
-                line_t l = proj_line;
-                l = scaled_line;
-            }
-
-            motion_dtype pose_x = pose[0];
-            motion_dtype pose_y = pose[1];
-            motion_dtype heading = pose[2];
-            motion_dtype ch = cos(heading);
-            motion_dtype sh = sin(heading);
-            motion_dtype unit_heading[2] = { ch, -sh }; // funky rotation flipping due to image coords
-            motion_dtype heading_perp[2] = { sh, ch }; // funky rotation flipping due to image coords
-            motion_dtype max_angle = heading + camera_info.fov_x/2;
-            motion_dtype min_angle = heading - camera_info.fov_x/2;
-            motion_dtype pose_center[2] = { pose_x, pose_y };
-            motion_dtype pose_px[2];
-            map_scale(pose_px, pose_center);
-            cv::Point _pose_px = _Point(pose_px);
-
-            const double max_depth = 1;
-            const double scale = map_scaling * max_depth;
-            circle_mask = 0.0;
-            cv::circle(circle_mask, _pose_px, scale*3, 0.25, -1);
-            cv::circle(circle_mask, _pose_px, scale*2, 0.5, -1);
-            cv::circle(circle_mask, _pose_px, scale*1, 1, -1);
-
-            vector<vptr> points_angles;
-            for (line_t line : scaled_lines) {
-                motion_dtype v1[2]; __vo_subv(v1, line_first(line), pose_px, 2);
-                motion_dtype v2[2]; __vo_subv(v2, line_second(line), pose_px, 2);
-                motion_dtype v1_l = __vo_norm(v1, 2);
-                motion_dtype v2_l = __vo_norm(v2, 2);
-                motion_dtype angle1 = acos(__vo_dot(heading_perp, v1, 2) / v1_l) - (M_PI/2);
-                motion_dtype angle2 = acos(__vo_dot(heading_perp, v2, 2) / v2_l) - (M_PI/2);
-                if (fabs(angle1) < camera_info.fov_x/2 && __vo_dot(unit_heading, v1, 2) > 0) {
-                    vptr tmp = fast_alloc_vec(3);
-                    tmp[0] = angle1;
-                    __vo_add(tmp+1, v1, pose_px, 2);
-                    points_angles.push_back(tmp);
+        vector<vptr> proj_lines;
+        for (auto line : lines) {
+            vptr proj_line = fast_alloc_vec(5);
+            motion_dtype scratch[3];
+            transform_point(scratch, line_first(line));
+            __se3_apply(line_first(proj_line), camera_pose, scratch);
+            transform_point(scratch, line_second(line));
+            __se3_apply(line_second(proj_line), camera_pose, scratch);
+            proj_line[4] = 0;
+            proj_lines.push_back(proj_line);
+        }
+        proj_lines = dbscan_filter_lines(proj_lines, prev_lines, 0.25);
+        ++keyframe_count;
+        motion_dtype pose_x;
+        motion_dtype pose_y;
+        motion_dtype heading;
+        if (keyframe_count >= KEYFRAME_MIN) {
+            vector<line_t> saved_subset;
+            pose_x = pose[0];
+            pose_y = pose[1];
+            heading = normalize_angle(pose[2]);
+            for (auto line_score : saved_lines) {
+                motion_dtype line_rel[4];
+                __vo_sub(line_first(line_rel), line_first(line_score), pose_x, 2);
+                __vo_sub(line_second(line_rel), line_second(line_score), pose_y, 2);
+                motion_dtype angle1 = normalize_angle(atan2(line_rel[1], line_rel[0]));
+                motion_dtype angle2 = normalize_angle(atan2(line_rel[3], line_rel[2]));
+                if (angle_distance(angle1, heading) < camera_info.fov_x
+                        || angle_distance(angle2, heading) < camera_info.fov_x) {
+                    saved_subset.push_back(line_score);
                 }
-                if (fabs(angle2) < camera_info.fov_x/2 && __vo_dot(unit_heading, v2, 2) > 0) {
-                    vptr tmp = fast_alloc_vec(3);
-                    tmp[0] = angle2;
-                    __vo_add(tmp+1, v2, pose_px, 2);
-                    points_angles.push_back(tmp);
+                else if (!(angle_distance(angle1, heading) < camera_info.fov_x/2
+                        || angle_distance(angle2, heading) < camera_info.fov_x/2)) {
+                    // TODO hack to exclude not in view lines from mismatch penalty...
+                    ++line_score[4];
                 }
             }
-            if (points_angles.size() > 0) {
-                std::sort(points_angles.begin(), points_angles.end(), line_cmp);
-                motion_dtype start[2];
-                motion_dtype end[2];
-                __vo_subv(start, points_angles[0] + 1, pose_px, 2);
-                motion_dtype r_start = __vo_norm(start, 2);
-                __vo_subv(end, points_angles[points_angles.size() - 1] + 1, pose_px, 2);
-                motion_dtype r_end = __vo_norm(end, 2);
-                // More flipped angle garbage
-                start[0] = r_start * cos(min_angle);
-                start[1] = -r_start * sin(min_angle);
-                __vo_add(start, start, pose_px, 2);
-                end[0] = r_end * cos(max_angle);
-                end[1] = -r_end * sin(max_angle);
-                __vo_add(end, end, pose_px, 2);
-
-                vector<cv::Point> polygon_points;
-                polygon_points.push_back(_Point(start));
-                for (vptr p : points_angles) {
-                    polygon_points.push_back(_Point(p+1));
+            vector<line_t> match_subset;
+            for (auto line_score : proj_lines) {
+                if (line_score[4] > 2) {
+                    match_subset.push_back(line_score);
                 }
-                polygon_points.push_back(_Point(end));
-                polygon_points.push_back(_pose_px);
-                cv::fillPoly(observe_mask, polygon_points, 1);
-                observe_mask = observe_mask.mul(circle_mask);
             }
-            plot_lines(disp_map, scaled_lines, {0, 0, 255});
-            plot_lines(new_lines, scaled_lines, {255, 255, 255});
+            motion_dtype best_tup[3];
+            motion_dtype best_loss = register_lines(best_tup, match_subset, saved_subset);
+            motion_dtype t = best_tup[0];
+            motion_dtype dx = best_tup[1];
+            motion_dtype dy = best_tup[2];
+
+            vector<line_t> transformed_lines;
+            motion_dtype r00 = cos(t);
+            motion_dtype r10 = sin(t);
+            motion_dtype r01 = -sin(t);
+            motion_dtype r11 = r00;
+            for (auto to_move : match_subset) {
+                line_t moved = fast_alloc_vec(4);
+                moved[0] = r00*to_move[0] + r01*to_move[1] + dx;
+                moved[1] = r10*to_move[0] + r11*to_move[1] + dy;
+                moved[2] = r00*to_move[2] + r01*to_move[3] + dx;
+                moved[3] = r10*to_move[2] + r11*to_move[3] + dy;
+                transformed_lines.push_back(moved);
+            }
+            saved_lines = dbscan_filter_lines(transformed_lines, saved_lines, 0.25);
+            for (auto line : saved_lines) {
+                if (line[4] > 2) {
+                    line[4] = 2;
+                }
+            }
+
+            pose[0] += dx;
+            pose[1] += dy;
+            pose[2] += t;
+            estimated_rot_err -= t;
+            if (display_images)  {
+                Mat tmp_map = disp_map.clone();
+                vector<line_t> scaled_tmp;
+                for (auto l : saved_lines) {
+                    line_t scaled_line = fast_alloc_vec(4);
+                    map_scale(line_first(scaled_line), line_first(l));
+                    map_scale(line_second(scaled_line), line_second(l));
+                }
+                plot_lines(tmp_map, scaled_tmp, {0, 255, 0});
+                draw_robot(tmp_map, pose);
+                cv::imshow("map", tmp_map);
+            }
+
+            proj_lines = vector<vptr>();
+            for (auto line_score : saved_lines) {
+                motion_dtype line_rel[4];
+                __vo_sub(line_first(line_rel), line_first(line_score), pose_x, 2);
+                __vo_sub(line_second(line_rel), line_second(line_score), pose_y, 2);
+                motion_dtype angle1 = normalize_angle(atan2(line_rel[1], line_rel[0]));
+                motion_dtype angle2 = normalize_angle(atan2(line_rel[3], line_rel[2]));
+                if (angle_distance(angle1, heading) < camera_info.fov_x
+                        || angle_distance(angle2, heading) < camera_info.fov_x) {
+                    proj_lines.push_back(line_score);
+                }
+            }
+            keyframe_count = 0;
         }
         
         // if prev points not none:
         //     plot the tracking points
-
-        motion_dtype pose_x = pose[0];
-        motion_dtype pose_y = pose[1];
-        motion_dtype heading = pose[2];
+        pose_x = pose[0];
+        pose_y = pose[1];
+        heading = normalize_angle(pose[2]);
         motion_dtype max_angle = heading + camera_info.fov_x/2;
         motion_dtype min_angle = heading - camera_info.fov_x/2;
         motion_dtype pose_center[2] = { pose_x, pose_y };
         motion_dtype pose_px[2];
         map_scale(pose_px, pose_center);
-        
+        const motion_dtype max_depth = 1;
+        const motion_dtype scale = map_scaling * max_depth;
+        circle_mask = 0.0;
+        cv::circle(circle_mask, _pose_px, scale*3, 0.25, -1);
+        cv::circle(circle_mask, _pose_px, scale*2, 0.5, -1);
+        cv::circle(circle_mask, _pose_px, scale*1, 1, -1);
+        cv::circle(circle_mask, _pose_px, scale*0.28, 0, -1);
+
         motion_dtype pointer_scale = 0.5;
         cv::Point center(pose_px[0], pose_px[1]);
         cv::circle(disp_map, center, 5, {0, 255, 0}, 1);

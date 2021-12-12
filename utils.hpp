@@ -1,5 +1,8 @@
+#pragma once
+
 #include <math.h>
 
+#include "types.h"
 #include <motionlib/vectorops.h>
 #include <motionlib/so3.h>
 #include <motionlib/se3.h>
@@ -25,10 +28,6 @@ static inline motion_dtype angle_distance(motion_dtype a, motion_dtype b) {
     if (err < err2) { return err; }
     return err2;
 }
-
-#define line_t motion_dtype*
-#define line_first(l) (l)
-#define line_second(l) ((l)+2)
 
 bool line_cmp(line_t i, line_t j) { return (i[0] < j[0]); }
 
@@ -76,4 +75,15 @@ motion_dtype line_distance(const line_t l1, const line_t l2) {
     motion_dtype angle2 = normalize_angle(atan2(l2[3] - l2[1], l2[2] - l2[0]));
     motion_dtype angle_err = angle_distance(angle1, angle2);
     return min_deviation * (1 + angle_err) + angle_err * (1 + min_deviation);
+}
+
+void linspace(vptr ret, motion_dtype center, motion_dtype spread, int step) {
+    motion_dtype spread_step = spread / step;
+    for (int i = 0; i < step; ++i) {
+        ret[i] = center - spread_step * (step - i);
+    }
+    ret[step] = center;
+    for (int i = 0; i < step; ++i) {
+        ret[i + step] = center + spread_step * (i - step);
+    }
 }
