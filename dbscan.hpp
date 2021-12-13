@@ -1,19 +1,26 @@
 #pragma once
 
-#include <vector>
+//#include <vector>
+//using std::vector;
+#include <debug/vector>
+using __gnu_debug::vector;
 #include <deque>
+#include <assert.h>
 
 #include "types.h"
 #include <motionlib/vectorops.h>
 #include "utils.hpp"
+
+#include <iostream>
 
 #include <Eigen/Dense> 
 using Eigen::Matrix;
 using Eigen::Dynamic;
 using Eigen::VectorXd;
 
-using std::vector;
 using std::deque;
+using std::cout;
+using std::endl;
 
 static inline deque<int> range_query(vector<vptr>& data,
                                      motion_dtype (metric)(const vptr, const vptr),
@@ -32,7 +39,7 @@ static inline deque<int> range_query(vector<vptr>& data,
 // uses brute force search lol
 // https://en.wikipedia.org/wiki/DBSCAN#Algorithm
 vector<int> dbscan(int& num_clusters, motion_dtype eps, int min_samples,
-                   motion_dtype (metric)(const vptr, const vptr), vector<vptr> data) {
+                   motion_dtype (metric)(const vptr, const vptr), vector<vptr>& data) {
     // -2: undef
     // -1: noise
     // >0: cluster
@@ -99,14 +106,21 @@ void merge_lines(line_t ret, vector<vptr>& points) {
     }
 }
 
-vector<line_t> dbscan_filter_lines(vector<line_t>& lines, vector<vptr> existings, motion_dtype eps) {
+vector<line_t> dbscan_filter_lines(vector<line_t>& lines, vector<vptr>& existings, motion_dtype eps) {
     int new_line_size = lines.size();
     for (auto line : existings) {
         lines.push_back(line);
     }
+    //for (auto line : lines) {
+    //    printf("%f %f, %f %f [%f]\n", line[0], line[1], line[2], line[3], line[4]);
+    //}
 
     int num_clusters;
     vector<int> groups = dbscan(num_clusters, eps, 1, line_distance, lines);
+    //for (auto group : groups) {
+    //    cout << group << " ";
+    //}
+    //cout << endl;
 
     vector<line_t> ret;
     vector<vector<vptr>> boxes;
@@ -136,15 +150,19 @@ vector<line_t> dbscan_filter_lines(vector<line_t>& lines, vector<vptr> existings
                 if (l[4] > 0) {
                     ret.push_back(l);
                 }
+                else {
+                    //cout << "old death" << endl;
+                }
             }
         }
         else {
             vptr p1 = line_first(lines[i]);
             vptr p2 = line_second(lines[i]);
-            boxes[i].push_back(p1);
-            boxes[i].push_back(p2);
+            boxes[groups[i]].push_back(p1);
+            boxes[groups[i]].push_back(p2);
             if (i >= new_line_size) {
-                ages[i] = 8;
+                ages[groups[i]] = 8;
+                //cout << "old match" << endl;
             }
         }
     }
@@ -156,5 +174,7 @@ vector<line_t> dbscan_filter_lines(vector<line_t>& lines, vector<vptr> existings
         new_line[4] = ages[i];
         ret.push_back(new_line);
     }
+    //int x;
+    //std::cin >> x;
     return ret;
 }

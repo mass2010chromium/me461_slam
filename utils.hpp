@@ -1,6 +1,7 @@
 #pragma once
 
 #include <math.h>
+#include <iostream>
 
 #include "types.h"
 #include <motionlib/vectorops.h>
@@ -23,7 +24,7 @@ static inline motion_dtype angle_distance(motion_dtype a, motion_dtype b) {
         max_angle = b;
         min_angle = a;
     }
-    motion_dtype err = max_angle = min_angle;
+    motion_dtype err = max_angle - min_angle;
     motion_dtype err2 = 2*M_PI - err;
     if (err < err2) { return err; }
     return err2;
@@ -74,6 +75,9 @@ motion_dtype line_distance(const line_t l1, const line_t l2) {
     motion_dtype angle1 = normalize_angle(atan2(l1[3] - l1[1], l1[2] - l1[0]));
     motion_dtype angle2 = normalize_angle(atan2(l2[3] - l2[1], l2[2] - l2[0]));
     motion_dtype angle_err = angle_distance(angle1, angle2);
+    if (angle_err > M_PI/2) {
+        angle_err = M_PI - angle_err;
+    }
     return min_deviation * (1 + angle_err) + angle_err * (1 + min_deviation);
 }
 

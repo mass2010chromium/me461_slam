@@ -1,7 +1,10 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
-#include <vector>
+//#include <vector>
+//using std::vector;
+#include <debug/vector>
+using __gnu_debug::vector;
 #include <deque>
 #include <ctime>
 #include <chrono>
@@ -36,7 +39,6 @@
 using namespace boost::property_tree;
 using HttpClient = SimpleWeb::Client<SimpleWeb::HTTP>;
 
-using std::vector;
 using std::cout;
 using std::endl;
 using cv::Mat;
@@ -109,19 +111,18 @@ void draw_robot(Mat& img, vptr pose, motion_dtype pointer_scale=0.5) {
     motion_dtype max_angle = heading + camera_info.fov_x/2;
     auto pose_px_pt = _Point(pose_px);
     cv::circle(img, pose_px_pt, 5, {0, 255, 0}, 1);
-    motion_dtype scratch[2];
-    scratch[0] = pose_px[0] + pointer_scale * cos(heading);
-    scratch[1] = pose_px[1] + pointer_scale * sin(heading);
+    motion_dtype scratch[2] = { pose[0] + pointer_scale * cos(heading),
+                                pose[1] + pointer_scale * sin(heading) };
     map_scale(scratch, scratch);
     cv::line(img, pose_px_pt, _Point(scratch), {0, 255, 0});
 
     const double fov_scale = 100;
-    scratch[0] = pose_px[0] + fov_scale * cos(min_angle);
-    scratch[1] = pose_px[1] + fov_scale * sin(min_angle);
+    scratch[0] = pose[0] + fov_scale * cos(min_angle);
+    scratch[1] = pose[1] + fov_scale * sin(min_angle);
     map_scale(scratch, scratch);
     cv::line(img, pose_px_pt, _Point(scratch), {255, 0, 0});
-    scratch[0] = pose_px[0] + fov_scale * cos(max_angle);
-    scratch[1] = pose_px[1] + fov_scale * sin(max_angle);
+    scratch[0] = pose[0] + fov_scale * cos(max_angle);
+    scratch[1] = pose[1] + fov_scale * sin(max_angle);
     map_scale(scratch, scratch);
     cv::line(img, pose_px_pt, _Point(scratch), {255, 0, 0});
 }
@@ -266,6 +267,7 @@ int main(int argc, char** argv)
         //cv::namedWindow("target", cv::WINDOW_AUTOSIZE);
         //cv::namedWindow("grad", cv::WINDOW_AUTOSIZE);
         cv::namedWindow("map", cv::WINDOW_AUTOSIZE);
+        cv::namedWindow("match", cv::WINDOW_AUTOSIZE);
     }
 
     //double prev_pose[5];
@@ -392,6 +394,8 @@ int main(int argc, char** argv)
         new_lines = (char)0;
         vector<vptr> proj_lines;
         for (auto line : lines) {
+            line[1] += height / 2;
+            line[3] += height / 2;
             vptr proj_line = fast_alloc_vec(5);
             motion_dtype scratch[3];
             transform_point(scratch, line_first(line));
@@ -401,20 +405,27 @@ int main(int argc, char** argv)
             proj_line[4] = 0;
             proj_lines.push_back(proj_line);
         }
-        proj_lines = dbscan_filter_lines(proj_lines, prev_lines, 0.25);
+        cout << "Previous line count: " << prev_lines.size() << endl;
+        auto _proj_lines = dbscan_filter_lines(proj_lines, prev_lines, 0.25);
+        proj_lines = _proj_lines;
         ++keyframe_count;
         motion_dtype pose_x;
         motion_dtype pose_y;
         motion_dtype heading;
+        motion_dtype pose_center[2];
+        motion_dtype pose_px[2];
         if (keyframe_count >= KEYFRAME_MIN) {
             vector<line_t> saved_subset;
             pose_x = pose[0];
             pose_y = pose[1];
+            pose_center[0] = pose_x; pose_center[1] = pose_y;
+            pose_px[2];
+            map_scale(pose_px, pose_center);
             heading = normalize_angle(pose[2]);
             for (auto line_score : saved_lines) {
                 motion_dtype line_rel[4];
-                __vo_sub(line_first(line_rel), line_first(line_score), pose_x, 2);
-                __vo_sub(line_second(line_rel), line_second(line_score), pose_y, 2);
+                __vo_subv(line_first(line_rel), line_first(line_score), pose_px, 2);
+                __vo_subv(line_second(line_rel), line_second(line_score), pose_px, 2);
                 motion_dtype angle1 = normalize_angle(atan2(line_rel[1], line_rel[0]));
                 motion_dtype angle2 = normalize_angle(atan2(line_rel[3], line_rel[2]));
                 if (angle_distance(angle1, heading) < camera_info.fov_x
@@ -433,8 +444,16 @@ int main(int argc, char** argv)
                     match_subset.push_back(line_score);
                 }
             }
+            cout << match_subset.size() << " confident matches" << endl;
             motion_dtype best_tup[3];
-            motion_dtype best_loss = register_lines(best_tup, match_subset, saved_subset);
+            if (saved_subset.size() > 0) {
+                motion_dtype best_loss = register_lines(best_tup, match_subset, saved_subset);
+            }
+            else {
+                best_tup[0] = 0;
+                best_tup[1] = 0;
+                best_tup[2] = 0;
+            }
             motion_dtype t = best_tup[0];
             motion_dtype dx = best_tup[1];
             motion_dtype dy = best_tup[2];
@@ -452,7 +471,8 @@ int main(int argc, char** argv)
                 moved[3] = r10*to_move[2] + r11*to_move[3] + dy;
                 transformed_lines.push_back(moved);
             }
-            saved_lines = dbscan_filter_lines(transformed_lines, saved_lines, 0.25);
+            auto _saved_lines = dbscan_filter_lines(transformed_lines, saved_lines, 0.25);
+            saved_lines = _saved_lines;
             for (auto line : saved_lines) {
                 if (line[4] > 2) {
                     line[4] = 2;
@@ -473,7 +493,7 @@ int main(int argc, char** argv)
                 }
                 plot_lines(tmp_map, scaled_tmp, {0, 255, 0});
                 draw_robot(tmp_map, pose);
-                cv::imshow("map", tmp_map);
+                cv::imshow("match", tmp_map);
             }
 
             proj_lines = vector<vptr>();
@@ -490,17 +510,23 @@ int main(int argc, char** argv)
             }
             keyframe_count = 0;
         }
-        
-        // if prev points not none:
-        //     plot the tracking points
+
+        vector<line_t> scaled_lines;
+        for (line_t proj_line : proj_lines) {
+            line_t scaled_line = fast_alloc_vec(4);
+            map_scale(line_first(scaled_line), line_first(proj_line));
+            map_scale(line_second(scaled_line), line_second(proj_line));
+            scaled_lines.push_back(scaled_line);
+        }
+
         pose_x = pose[0];
         pose_y = pose[1];
         heading = normalize_angle(pose[2]);
         motion_dtype max_angle = heading + camera_info.fov_x/2;
         motion_dtype min_angle = heading - camera_info.fov_x/2;
-        motion_dtype pose_center[2] = { pose_x, pose_y };
-        motion_dtype pose_px[2];
+        pose_center[0] = pose_x; pose_center[1] = pose_y;
         map_scale(pose_px, pose_center);
+        cv::Point _pose_px = _Point(pose_px);
         const motion_dtype max_depth = 1;
         const motion_dtype scale = map_scaling * max_depth;
         circle_mask = 0.0;
@@ -509,22 +535,129 @@ int main(int argc, char** argv)
         cv::circle(circle_mask, _pose_px, scale*1, 1, -1);
         cv::circle(circle_mask, _pose_px, scale*0.28, 0, -1);
 
-        motion_dtype pointer_scale = 0.5;
-        cv::Point center(pose_px[0], pose_px[1]);
-        cv::circle(disp_map, center, 5, {0, 255, 0}, 1);
+        vector<vptr> points_angles;
+        motion_dtype ch = cos(heading);
+        motion_dtype sh = sin(heading);
+        motion_dtype unit_heading[2] = { ch, -sh }; // funky rotation flipping due to image coords
+        motion_dtype heading_perp[2] = { sh, ch }; // funky rotation flipping due to image coords
+        int hold_id = 1;
+        for (line_t line : scaled_lines) {
+            motion_dtype v1[2]; __vo_subv(v1, line_first(line), pose_px, 2);
+            motion_dtype v2[2]; __vo_subv(v2, line_second(line), pose_px, 2);
+            int n_append = 0;
+            vptr append_points[2];
+            if (__vo_dot(unit_heading, v1, 2) > 0) {
+                motion_dtype v1_l = __vo_norm(v1, 2);
+                motion_dtype angle1 = acos(__vo_dot(heading_perp, v1, 2) / v1_l) - (M_PI/2);
+                vptr point = fast_alloc_vec(3);
+                point[0] = angle1;
+                point[1] = v1_l;
+                point[2] = 0;
+                append_points[n_append] = point;
+                ++n_append;
+            }
+            if (__vo_dot(unit_heading, v2, 2) > 0) {
+                motion_dtype v2_l = __vo_norm(v2, 2);
+                motion_dtype angle2 = acos(__vo_dot(heading_perp, v2, 2) / v2_l) - (M_PI/2);
+                vptr point = fast_alloc_vec(3);
+                point[0] = angle2;
+                point[1] = v2_l;
+                point[2] = 0;
+                append_points[n_append] = point;
+                ++n_append;
+            }
+            if (n_append == 2) {
+                vptr first = append_points[0];
+                vptr second = append_points[1];
+                if (second[0] < first[0]) {
+                    first = append_points[1];
+                    second = append_points[0];
+                }
+                first[2] = -hold_id;
+                second[2] = hold_id;
+                ++hold_id;
+            }
+            for (int i = 0; i < n_append; ++i) {
+                points_angles.push_back(append_points[i]);
+            }
+        }
 
-        double leader[2] = {pose_x + pointer_scale * cos(heading),
-                            pose_y + pointer_scale * sin(heading)};
-        map_scale(leader, leader);
-        cv::line(disp_map, center, _Point(leader), {0, 255, 0});
-        double max_pt[2] = {pose_x + 100 * cos(max_angle),
-                            pose_y + 100 * sin(max_angle)};
-        map_scale(max_pt, max_pt);
-        cv::line(disp_map, center, _Point(max_pt), {255, 0, 0});
-        double min_pt[2] = {pose_x + 100 * cos(min_angle),
-                            pose_y + 100 * sin(min_angle)};
-        map_scale(min_pt, min_pt);
-        cv::line(disp_map, center, _Point(min_pt), {255, 0, 0});
+        if (points_angles.size() > 0) {
+            std::sort(points_angles.begin(), points_angles.end(), line_cmp);
+            vector<motion_dtype> active_set(hold_id, 0);
+            vector<vptr> out_points;
+
+            motion_dtype r_start = 1000;
+            motion_dtype r_end = 1000;
+            motion_dtype dist = 0;
+            int sweep_state = 0;
+            for (vptr info : points_angles) {
+                motion_dtype info_angle = info[0];
+                if (info_angle > camera_info.fov_x/2 && sweep_state == 1) {
+                    r_end = dist;
+                    sweep_state = 2;
+                }
+
+                dist = info[1];
+                for (int i = 0; i < hold_id; ++i) {
+                    if (active_set[i] != 0) {
+                        dist = active_set[i];
+                    }
+                }
+                if (info_angle < -camera_info.fov_x/2) {
+                    if (dist < r_start) {
+                        r_start = dist;
+                    }
+                }
+                if (info_angle > -camera_info.fov_x/2 && sweep_state == 0) {
+                    if (dist < r_start) {
+                        r_start = dist;
+                    }
+                    sweep_state = 1;
+                }
+                if (info_angle > camera_info.fov_x/2) {
+                    if (dist < r_end) {
+                        r_end = dist;
+                    }
+                }
+                if (fabs(info_angle) < camera_info.fov_x/2) {
+                    motion_dtype angle = info_angle + heading;
+                    vptr p = fast_alloc_vec(2);
+                    p[0] = pose_px[0] + cos(angle)*dist;
+                    p[1] = pose_px[1] - sin(angle)*dist;
+                    out_points.push_back(p);
+                }
+
+                int hold = info[2];
+                if (hold < 0) {
+                    active_set[-hold] = dist;
+                }
+                else if (hold > 0) {
+                    active_set[hold] = 0;
+                }
+            }
+            motion_dtype start[2];
+            motion_dtype end[2];
+            // More flipped angle garbage
+            start[0] = r_start * cos(min_angle) + pose_px[0];
+            start[1] = -r_start * sin(min_angle) + pose_px[1];
+            end[0] = r_end * cos(max_angle) + pose_px[0];
+            end[1] = -r_end * sin(max_angle) + pose_px[1];
+            vector<cv::Point> polygon_points;
+            polygon_points.push_back(_Point(start));
+            for (vptr p : out_points) {
+                polygon_points.push_back(_Point(p));
+            }
+            polygon_points.push_back(_Point(end));
+            polygon_points.push_back(_Point(pose_px));
+            cv::fillPoly(observe_mask, polygon_points, 1);
+            observe_mask = observe_mask.mul(circle_mask);
+        }
+
+        plot_lines(disp_map, scaled_lines, {0, 0, 255});
+        plot_lines(new_lines, scaled_lines, {255, 255, 255});
+
+        draw_robot(disp_map, pose);
 
         Mat tmp = observe_mask * 0.10;
         cv::cvtColor(tmp, tmp, cv::COLOR_GRAY2BGR);

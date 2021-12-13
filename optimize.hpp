@@ -77,8 +77,8 @@ motion_dtype register_lines(vptr ret, vector<line_t>& match_subset, vector<line_
                 }
             }
         }
-        printf("refining... (%f, %f, %f) %f", ret[0], ret[1], ret[2], best_loss);
+        printf("refining... (%f, %f, %f) %f\n", ret[0], ret[1], ret[2], best_loss);
     }
-    printf("Computed transform: (%f, %f, %f) %f", ret[0], ret[1], ret[2], best_loss);
+    printf("Computed transform: (%f, %f, %f) %f\n", ret[0], ret[1], ret[2], best_loss);
     return best_loss;
 }

@@ -476,8 +476,8 @@ while True:
         proj_lines = []
         for i, (line, score) in enumerate(saved_lines):
             x1, y1, x2, y2 = line
-            v1 = vo.sub((x1, y1), pose_x)
-            v2 = vo.sub((x2, y2), pose_y)
+            v1 = vo.sub((x1, y1), pose_px)
+            v2 = vo.sub((x2, y2), pose_px)
             angle1 = normalize_angle(math.atan2(v1[1], v1[0]))
             angle2 = normalize_angle(math.atan2(v2[1], v2[0]))
             if (angle_distance(angle1, heading) < fov_x
