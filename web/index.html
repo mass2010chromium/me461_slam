@@ -47,7 +47,7 @@
             // TODO: stream instead of spam http
             let target_div = document.getElementById("main");
             function refresh() {
-                fetch("pose")
+                fetch("pose_slam")
                     .then(rs => rs.json())
                     .then(dat => {
                         target_div.innerHTML = JSON.stringify(dat);

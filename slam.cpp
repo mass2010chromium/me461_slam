@@ -245,7 +245,7 @@ int main(int argc, char** argv)
         return 1;
     }
     bool camera_mode = false;
-    bool display_images = true;
+    int display_images = 2;
     if (argc > 1 && std::string(argv[1]) == "--camera") {
         camera_mode = true;
         camera = cv::VideoCapture(0);
@@ -258,19 +258,27 @@ int main(int argc, char** argv)
         }
         if (argc > 1) {
             if (std::string(argv[1]) == "--quiet") {
-                display_images = false;
+                display_images = 0;
+            }
+            if (std::string(argv[1]) == "--maponly") {
+                display_images = 1;
             }
         }
     }
-    if (display_images) {
+    if (display_images == 2) {
         cv::namedWindow("raw", cv::WINDOW_AUTOSIZE);
         //cv::namedWindow("target", cv::WINDOW_AUTOSIZE);
-        //cv::namedWindow("grad", cv::WINDOW_AUTOSIZE);
+        cv::namedWindow("grad", cv::WINDOW_AUTOSIZE);
         cv::namedWindow("map", cv::WINDOW_AUTOSIZE);
+        cv::namedWindow("match", cv::WINDOW_AUTOSIZE);
+        cv::namedWindow("mask", cv::WINDOW_AUTOSIZE);
+    }
+    else if (display_images == 1) {
+        cv::namedWindow("raw", cv::WINDOW_AUTOSIZE);
         cv::namedWindow("match", cv::WINDOW_AUTOSIZE);
     }
 
-    //double prev_pose[5];
+    double prev_pose_raw[5];
     //vector<line_t> prev_points;
     vector<vptr> prev_lines;
     vector<vptr> saved_lines;
@@ -294,25 +302,27 @@ int main(int argc, char** argv)
     Mat deriv;
 
     int keyframe_count = 0;
-    const int KEYFRAME_MIN = 5;
+    const int KEYFRAME_MIN = 8;
     size_t frame = 0;
     for (;;++frame) {
         auto start = std::chrono::system_clock::now();
 
-        HttpClient client("localhost:8080");
         volatile bool pose_gotten = false;
         std::stringstream pose_info;
-        client.request("GET", "/pose", "", [&pose_gotten, &pose_info](std::shared_ptr<HttpClient::Response> response, const SimpleWeb::error_code& ec) {
-            if (!ec) {
-                pose_info << response->content.rdbuf();
-            }
-            else {
-                pose_info << R"({"x":0,"y":0,"heading":0,"v":0,"w":0})";
-                std::cout << "http request failed" << std::endl;
-            }
-            pose_gotten = true;
-        });
-        client.io_service->run();
+        {
+            HttpClient client("localhost:8080");
+            client.request("GET", "/pose_raw", "", [&pose_gotten, &pose_info](std::shared_ptr<HttpClient::Response> response, const SimpleWeb::error_code& ec) {
+                if (!ec) {
+                    pose_info << response->content.rdbuf();
+                }
+                else {
+                    pose_info << R"({"x":0,"y":0,"heading":0,"v":0,"w":0})";
+                    std::cout << "http request failed" << std::endl;
+                }
+                pose_gotten = true;
+            });
+            client.io_service->run();
+        }
         if (camera_mode) {
             bool res = camera.read(disp);
         }
@@ -320,18 +330,21 @@ int main(int argc, char** argv)
             size_t nbytes = (disp.dataend - disp.datastart) * sizeof(uchar);
             memcpy(disp.data, image_buffer, nbytes);
         }
-        //cv::cvtColor(disp, disp, cv::COLOR_BGR2GRAY);
+        Mat gray;
+        cv::cvtColor(disp, gray, cv::COLOR_BGR2GRAY);
         cv::undistort(disp, undistort, camera_mat, distortion);
+        cv::cvtColor(gray, disp, cv::COLOR_GRAY2BGR);
+        disp = undistort - disp;
 
         while (!pose_gotten) {};
         ptree pt;
         read_json(pose_info, pt);
         vptr new_pose =  (vptr) malloc(5*sizeof(motion_dtype));
-        new_pose[0] = pt.get<double>("x");
-        new_pose[1] = pt.get<double>("y");
-        new_pose[2] = pt.get<double>("heading");
-        new_pose[3] = pt.get<double>("v");
-        new_pose[4] = pt.get<double>("w");
+        new_pose[0] = pt.get<motion_dtype>("x");
+        new_pose[1] = pt.get<motion_dtype>("y");
+        new_pose[2] = pt.get<motion_dtype>("heading");
+        new_pose[3] = pt.get<motion_dtype>("v");
+        new_pose[4] = pt.get<motion_dtype>("w");
 
         if (pose == NULL) {
             pose = new_pose;
@@ -341,6 +354,7 @@ int main(int argc, char** argv)
             map_scale(scratch, scratch);
             cv::circle(map_img, _Point(scratch), map_scaling * 0.5, {0, 0, 0}, -1);
             prev_head_tmp = pose[2];
+            memcpy(prev_pose_raw, new_pose, 5*sizeof(motion_dtype));
         }
         else {
             pose_queue.push_back(new_pose);
@@ -351,7 +365,7 @@ int main(int argc, char** argv)
                 free_pose = true;
             }
             motion_dtype delta[2];
-            __vo_subv(delta, new_pose, pose, 2);
+            __vo_subv(delta, new_pose, prev_pose_raw, 2);
             double _cos = cos(estimated_rot_err);
             double _sin = sin(estimated_rot_err);
             pose[0] += delta[0] * _cos + delta[1] * _sin;
@@ -362,16 +376,19 @@ int main(int argc, char** argv)
             pose[2] = new_pose[2] - estimated_rot_err;
             pose[3] = new_pose[3];
             pose[4] = new_pose[4];
+            memcpy(prev_pose_raw, new_pose, 5*sizeof(motion_dtype));
             if (free_pose) {
                 free(new_pose);
             }
         }
-        
-        disp = undistort.clone();
 
         int height = disp.size().height;
         Mat processing = undistort(cv::Range(height/2, height), cv::Range::all());
-        cv::Canny(processing, deriv, 150, 300);
+        //cv::cvtColor(processing, processing, cv::COLOR_BGR2HSV);
+        //Mat hsv[3];
+        //cv::split(processing, hsv);
+        //cv::Canny(hsv[1], deriv, 225, 450);
+        cv::Canny(processing, deriv, 225, 450);
         deriv = deriv / 2;
 
         motion_dtype camera_pose[12];
@@ -405,8 +422,7 @@ int main(int argc, char** argv)
             proj_line[4] = 0;
             proj_lines.push_back(proj_line);
         }
-        cout << "Previous line count: " << prev_lines.size() << endl;
-        auto _proj_lines = dbscan_filter_lines(proj_lines, prev_lines, 0.25);
+        auto _proj_lines = dbscan_filter_lines(proj_lines, prev_lines, 0.25, 8);
         proj_lines = _proj_lines;
         ++keyframe_count;
         motion_dtype pose_x;
@@ -424,35 +440,31 @@ int main(int argc, char** argv)
             heading = normalize_angle(pose[2]);
             for (auto line_score : saved_lines) {
                 motion_dtype line_rel[4];
-                __vo_subv(line_first(line_rel), line_first(line_score), pose_px, 2);
-                __vo_subv(line_second(line_rel), line_second(line_score), pose_px, 2);
+                __vo_subv(line_first(line_rel), line_first(line_score), pose, 2);
+                __vo_subv(line_second(line_rel), line_second(line_score), pose, 2);
                 motion_dtype angle1 = normalize_angle(atan2(line_rel[1], line_rel[0]));
                 motion_dtype angle2 = normalize_angle(atan2(line_rel[3], line_rel[2]));
+                printf("%f %f %f\n", angle1, angle2, heading);
                 if (angle_distance(angle1, heading) < camera_info.fov_x
                         || angle_distance(angle2, heading) < camera_info.fov_x) {
                     saved_subset.push_back(line_score);
                 }
-                else if (!(angle_distance(angle1, heading) < camera_info.fov_x/2
-                        || angle_distance(angle2, heading) < camera_info.fov_x/2)) {
+                if (!(angle_distance(angle1, heading) < (camera_info.fov_x/2)*0.7
+                        || angle_distance(angle2, heading) < (camera_info.fov_x/2)*0.7)) {
                     // TODO hack to exclude not in view lines from mismatch penalty...
                     ++line_score[4];
                 }
             }
             vector<line_t> match_subset;
             for (auto line_score : proj_lines) {
-                if (line_score[4] > 2) {
+                if (line_score[4] > 4) {
                     match_subset.push_back(line_score);
                 }
             }
             cout << match_subset.size() << " confident matches" << endl;
-            motion_dtype best_tup[3];
+            motion_dtype best_tup[3] = {0, 0, 0};
             if (saved_subset.size() > 0) {
                 motion_dtype best_loss = register_lines(best_tup, match_subset, saved_subset);
-            }
-            else {
-                best_tup[0] = 0;
-                best_tup[1] = 0;
-                best_tup[2] = 0;
             }
             motion_dtype t = best_tup[0];
             motion_dtype dx = best_tup[1];
@@ -471,11 +483,11 @@ int main(int argc, char** argv)
                 moved[3] = r10*to_move[2] + r11*to_move[3] + dy;
                 transformed_lines.push_back(moved);
             }
-            auto _saved_lines = dbscan_filter_lines(transformed_lines, saved_lines, 0.25);
+            auto _saved_lines = dbscan_filter_lines(transformed_lines, saved_lines, 0.25, 32);
             saved_lines = _saved_lines;
             for (auto line : saved_lines) {
-                if (line[4] > 2) {
-                    line[4] = 2;
+                if (line[4] > 4) {
+                    line[4] = 4;
                 }
             }
 
@@ -483,13 +495,14 @@ int main(int argc, char** argv)
             pose[1] += dy;
             pose[2] += t;
             estimated_rot_err -= t;
-            if (display_images)  {
+            if (display_images != 0)  {
                 Mat tmp_map = disp_map.clone();
                 vector<line_t> scaled_tmp;
                 for (auto l : saved_lines) {
                     line_t scaled_line = fast_alloc_vec(4);
                     map_scale(line_first(scaled_line), line_first(l));
                     map_scale(line_second(scaled_line), line_second(l));
+                    scaled_tmp.push_back(scaled_line);
                 }
                 plot_lines(tmp_map, scaled_tmp, {0, 255, 0});
                 draw_robot(tmp_map, pose);
@@ -509,6 +522,14 @@ int main(int argc, char** argv)
                 }
             }
             keyframe_count = 0;
+        }
+        else {
+            vector<vptr> _save(saved_lines.size());
+            for (int i = 0; i < saved_lines.size(); ++i) {
+                _save[i] = fast_alloc_vec(5);
+                memcpy(_save[i], saved_lines[i], 5*sizeof(motion_dtype));
+            }
+            saved_lines = _save;
         }
 
         vector<line_t> scaled_lines;
@@ -600,7 +621,7 @@ int main(int argc, char** argv)
 
                 dist = info[1];
                 for (int i = 0; i < hold_id; ++i) {
-                    if (active_set[i] != 0) {
+                    if (active_set[i] != 0 && active_set[i] < dist) {
                         dist = active_set[i];
                     }
                 }
@@ -609,7 +630,7 @@ int main(int argc, char** argv)
                         r_start = dist;
                     }
                 }
-                if (info_angle > -camera_info.fov_x/2 && sweep_state == 0) {
+                if (info_angle >= -camera_info.fov_x/2 && sweep_state == 0) {
                     if (dist < r_start) {
                         r_start = dist;
                     }
@@ -672,11 +693,19 @@ int main(int argc, char** argv)
 
         prev_lines = proj_lines;
 
-        if (display_images) {
+        if (display_images == 1) {
             cv::imshow("raw", disp);
-            //cv::imshow("grad", deriv);
-            cv::imshow("map", disp_map);
             int key = cv::waitKeyEx(1);
+        }
+        if (display_images == 2) {
+            cv::imshow("raw", disp);
+            cv::imshow("grad", deriv);
+            //cv::imshow("raw", hsv[1]);
+            //cv::imshow("grad", hsv[2]);
+            cv::imshow("map", disp_map);
+            cv::imshow("mask", observe_mask);
+            //cv::imshow("mask", hsv[1]+hsv[2]);
+            int key = cv::waitKeyEx(0);
             if (key == 27 || key == 'q') {
                 break;
             }
@@ -687,6 +716,23 @@ int main(int argc, char** argv)
         auto end = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds = end-start;
         std::cout << "SPF: " << elapsed_seconds.count() <<  std::endl;
+
+        std::stringstream pose_info_out;
+        pose_info_out << "{\"x\":" << pose[0]
+                      << ",\"y\":" << pose[1]
+                      << ",\"t\":" << pose[2]
+                      << ",\"v\":" << pose[3]
+                      << ",\"w\":" << pose[4] << "}";
+        {
+            HttpClient client("localhost:8080");
+            client.request("POST", "/pose_slam", pose_info_out.str(),
+                           [](std::shared_ptr<HttpClient::Response> response, const SimpleWeb::error_code& ec) {
+                if (ec) {
+                    std::cout << "post request failed" << std::endl;
+                }
+            });
+            client.io_service->run();
+        }
 //        std::stringstream filename("calibration/cpp_log/capture_", std::ios_base::app | std::ios_base::out);
 //        filename << std::setfill('0') << std::setw(6) << frame << ".png";
 //        cv::imwrite(filename.str(), disp);

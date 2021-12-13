@@ -106,7 +106,7 @@ void merge_lines(line_t ret, vector<vptr>& points) {
     }
 }
 
-vector<line_t> dbscan_filter_lines(vector<line_t>& lines, vector<vptr>& existings, motion_dtype eps) {
+vector<line_t> dbscan_filter_lines(vector<line_t>& lines, vector<vptr>& existings, motion_dtype eps, int match_age) {
     int new_line_size = lines.size();
     for (auto line : existings) {
         lines.push_back(line);
@@ -161,7 +161,7 @@ vector<line_t> dbscan_filter_lines(vector<line_t>& lines, vector<vptr>& existing
             boxes[groups[i]].push_back(p1);
             boxes[groups[i]].push_back(p2);
             if (i >= new_line_size) {
-                ages[groups[i]] = 8;
+                ages[groups[i]] = match_age;
                 //cout << "old match" << endl;
             }
         }

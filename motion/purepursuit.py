@@ -49,7 +49,7 @@ class PurePursuit:
         self.__speed = speed
         self.__kv = kv
 
-    def step(self, pose):
+    def get_lookahead(self, pose):
         center = pose[:2]
         heading = normalize_angle(pose[2])
 
@@ -58,7 +58,6 @@ class PurePursuit:
         for p1, p2 in zip(self.__path, self.__path[1:]):
             if p1 == p2:
                 continue
-
             p1_c = vo.sub(p1, center)            
             p2_c = vo.sub(p2, center)            
 
@@ -100,6 +99,12 @@ class PurePursuit:
                 ):
                     lookahead = vo.add((x2, y2), center)
                     lookahead_angle = atan2(dy, dx)
+        return lookahead, lookahead_angle
+
+    def step(self, pose):
+        center = pose[:2]
+        heading = normalize_angle(pose[2])
+        lookahead, lookahead_angle = self.get_lookahead(pose)
 
         if lookahead is None or vo.norm(vo.sub(lookahead, self.__path[-1])) < self.__radius:
             return (True, None)
@@ -107,7 +112,6 @@ class PurePursuit:
         dx, dy = vo.sub(lookahead, center)
         direct_angle = atan2(dy, dx)
         target_angle = average_angle(direct_angle, lookahead_angle)
-        print(target_angle)
 
         limit_error = angle_diff_signed(heading, lookahead_angle)
         angle_error = angle_diff_signed(heading, target_angle)

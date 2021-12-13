@@ -339,6 +339,7 @@ while True:
     #deriv = 50 * (np.abs(cv2.Laplacian(cv2.GaussianBlur(marked_im, (0, 0), 5), cv2.CV_64F, ksize=5)) > 30)
     #deriv = np.array(50 * (np.abs(cv2.Laplacian(cv2.GaussianBlur(marked_im, (0, 0), 3), cv2.CV_64F, ksize=5)) > 100), dtype=np.uint8)
     #deriv = np.array(50 * (np.abs(cv2.Laplacian(cv2.GaussianBlur(marked_im, (0, 0), 0.5), cv2.CV_64F, ksize=3)) > 100), dtype=np.uint8)
+    cv2.cvtColor(marked_im, cv2.COLOR_BGR2HSV)
     deriv = cv2.Canny(marked_im, 125, 300) // 2
     
     cam_pose = get_camera_pose(pose)

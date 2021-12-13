@@ -45,6 +45,7 @@ struct RobotInfo {
 typedef struct RobotInfo RobotInfo;
 
 RobotInfo robot_info;
+RobotInfo slam_info;
 
 struct RobotCommand {
   RobotCommand() : cmd_v(0), cmd_w(0) {}
@@ -122,8 +123,35 @@ int main() {
       response->write(SimpleWeb::StatusCode::client_error_bad_request, e.what());
     }
   };
-  
-  server.resource["^/pose$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
+
+  server.resource["^/pose_slam$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
+    stringstream stream;
+    stream << "{\"x\":" << slam_info.x
+           << ",\"y\":" << slam_info.y
+           << ",\"heading\":" << slam_info.heading
+           << ",\"v\":" << slam_info.v
+           << ",\"w\":" << slam_info.w << "}";
+    response->write(stream);
+  };
+
+  server.resource["^/pose_slam$"]["POST"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
+    try {
+      ptree pt;
+      read_json(request->content, pt);
+      slam_info.x = pt.get<float>("x");
+      slam_info.y = pt.get<float>("y");
+      slam_info.heading = pt.get<float>("t");
+      slam_info.v = pt.get<float>("v");
+      slam_info.w = pt.get<float>("w");
+      response->write("POSE Command recieved");
+    }
+    catch (const exception& e) {
+      response->write(SimpleWeb::StatusCode::client_error_bad_request, e.what());
+    }
+  };
+
+
+  server.resource["^/pose_raw$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
     stringstream stream;
     stream << "{\"x\":" << robot_info.x
            << ",\"y\":" << robot_info.y
@@ -132,7 +160,7 @@ int main() {
            << ",\"w\":" << robot_info.w << "}";
     response->write(stream);
   };
-  
+
   server.resource["^/raw$"]["POST"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
     try {
       ptree pt;

@@ -38,7 +38,10 @@ motion_dtype loss(vector<line_t>& match_subset, vector<line_t>& saved_subset,
         }
         score += closest_dist;
     }
-    return score;
+    motion_dtype tmp[2];
+    tmp[0] = dx;
+    tmp[1] = dy;
+    return score + __vo_norm(tmp, 2) + fabs(t);
 }
 
 const motion_dtype THETA_SPREAD_INIT = 0.3;
