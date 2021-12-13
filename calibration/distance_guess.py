@@ -278,7 +278,7 @@ prev_lines = []
 prev_observe_mask = None
 
 VIDEO_DELAY = 0
-start_frame = 60
+start_frame = 160
 end_frame = 254
 frame_count = start_frame
 

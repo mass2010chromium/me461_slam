@@ -5,7 +5,9 @@ import numpy as np
 
 print('connecting to camera')
 cam = cv2.VideoCapture(0)
+print("m")
 cam.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+print("m")
 
 with open("intrinsics.json") as _intrinsics:
     intrinsics = json.load(_intrinsics)
@@ -15,6 +17,7 @@ camera_dist = np.array(intrinsics["distortion"])
 
 N = 30
 while True:
+    print("m")
     t0 = time.time()
     for i in range(N):
         ret, image = cam.read()

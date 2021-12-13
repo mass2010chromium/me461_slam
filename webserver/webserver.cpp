@@ -1,5 +1,6 @@
 #include <simple-web-server/server_http.hpp>
 #include <future>
+#include <math.h>
 
 #include <unistd.h>
 #include <sys/mman.h>
@@ -25,6 +26,9 @@
 
 #include <stdio.h>
 #include "serial_dev.h"
+
+#include <mutex>
+std::mutex slam_pose_lock;
 
 using namespace std;
 // Added for the json-example:
@@ -138,11 +142,13 @@ int main() {
     try {
       ptree pt;
       read_json(request->content, pt);
+      slam_pose_lock.lock();
       slam_info.x = pt.get<float>("x");
       slam_info.y = pt.get<float>("y");
       slam_info.heading = pt.get<float>("t");
       slam_info.v = pt.get<float>("v");
       slam_info.w = pt.get<float>("w");
+      slam_pose_lock.unlock();
       response->write("POSE Command recieved");
     }
     catch (const exception& e) {
@@ -341,11 +347,31 @@ int main() {
           index = new_index;
       }
       else {
-        robot_info.x = *((float*) (recv_buf)) * FEET_TO_METER;
-        robot_info.y = *((float*) (recv_buf + 4)) * FEET_TO_METER;
-        robot_info.heading = *((float*) (recv_buf + 8));
-        robot_info.v = *((float*) (recv_buf + 12)) * FEET_TO_METER;
-        robot_info.w = *((float*) (recv_buf + 16));
+        float new_x = *((float*) (recv_buf)) * FEET_TO_METER;
+        float new_y = *((float*) (recv_buf + 4)) * FEET_TO_METER;
+        float delta_x = new_x - robot_info.x;
+        float delta_y = new_y - robot_info.y;
+        float new_heading = *((float*) (recv_buf + 8));
+        float delta_heading = new_heading - robot_info.heading;
+        float new_v = *((float*) (recv_buf + 12)) * FEET_TO_METER;
+        float new_w = *((float*) (recv_buf + 16));
+
+        slam_pose_lock.lock();
+        float heading_err = new_heading - slam_info.heading;
+                float _cos = cos(heading_err);
+        float _sin = sin(heading_err);
+        slam_info.x += delta_x * _cos + delta_y * _sin;
+        slam_info.y += delta_y * _cos - delta_x * _sin;
+        slam_info.heading += delta_heading;
+        slam_info.v = new_v;
+        slam_info.w = new_w;
+        slam_pose_lock.unlock();
+
+        robot_info.x = new_x;
+        robot_info.y = new_y;
+        robot_info.heading = new_heading;
+        robot_info.v = new_v;
+        robot_info.w = new_w;
       }
     }
   });

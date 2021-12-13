@@ -37,7 +37,7 @@ def get_pose():
     position_json = json.loads(position_info)
     return (position_json['x'], position_json['y'], position_json['heading'])
 
-kv = 3
+kv = 1.5
 def move_heading(target_angle):
     ok = 0
     while True:
@@ -57,6 +57,9 @@ def move_heading(target_angle):
         if abs(angle_error) < 0.1:
             ok += 1
             if ok > 30:
+                data = json.dumps({'v': 0, 'w': 0}).encode('utf-8')
+                req = urllib.request.Request("http://localhost:8080/raw", data=data)
+                resp = urllib.request.urlopen(req)
                 break
         else:
             ok = 0
@@ -110,7 +113,7 @@ def move_to_pose(image, end_pose):
     cv2.waitKey(1)
     if do_move:
         radius = 0.2
-        speed = 0.2
+        speed = 0.1
         follower = PurePursuit(path, radius, speed, kv)
         cur = get_pose()
         print(cur)
@@ -120,8 +123,9 @@ def move_to_pose(image, end_pose):
         while True:
             ret, image = cap.read()
             cur = get_pose()
+            point, angle = follower.get_lookahead(cur)
             space.update_map(image)
-            if not space.feasible(cur):
+            if not space.feasible(point):
                 print("Encountered obstacle, replanning")
                 move_to_pose(image, end_pose)
                 return

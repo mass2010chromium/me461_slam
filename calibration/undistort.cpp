@@ -78,9 +78,9 @@ int main()
             client.io_service->run();
             std::stringstream filename("cpp_log/capture_", std::ios_base::app | std::ios_base::out);
             bool res = camera.read(image);
-            //cv::undistort(image, undistort, camera_mat, distortion);
+            cv::undistort(image, undistort, camera_mat, distortion);
             filename << std::setfill('0') << std::setw(6) << frame << ".png";
-            cv::imwrite(filename.str(), image);
+            //cv::imwrite(filename.str(), image);
 
             std::stringstream pose_fname("cpp_log/pose_", std::ios_base::app | std::ios_base::out);
             pose_fname << std::setfill('0') << std::setw(6) << frame << ".json";
@@ -90,8 +90,8 @@ int main()
             pose_file.close();
             ++frame;
         }
-        //cv::imshow("Display Image", image);
-        //cv::waitKey(1);
+        cv::imshow("Display Image", undistort);
+        cv::waitKey(1);
         auto end = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds = end-start;
         std::cout << "FPS: " << N / elapsed_seconds.count() << " " << image.size <<  std::endl;
