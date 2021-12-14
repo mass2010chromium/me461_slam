@@ -6,6 +6,14 @@
 #include "types.h"
 #include <motionlib/vectorops.h>
 
+#ifdef DEBUG
+#include <debug/vector>
+using __gnu_debug::vector;
+#else
+#include <vector>
+using std::vector;
+#endif
+
 /*
  * saved_subset must be nonempty.
  */

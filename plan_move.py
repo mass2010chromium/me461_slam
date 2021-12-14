@@ -37,6 +37,7 @@ def get_pose():
     position_json = json.loads(position_info)
     return (position_json['x'], position_json['y'], position_json['heading'])
 
+
 kv = 1.5
 def move_heading(target_angle):
     ok = 0
@@ -68,11 +69,22 @@ def move_heading(target_angle):
         req = urllib.request.Request("http://localhost:8080/raw", data=data)
         resp = urllib.request.urlopen(req)
 
+def spin_in_circle():
+    cur = get_pose()
+    heading = cur[2] % (2*math.pi)
+    steps = 10
+    for i in range(steps):
+        target = heading + 2*math.pi/steps
+        move_heading(target)
+    move_heading(heading)
+
 def move_to_pose(image, end_pose):
     position_info = urllib.request.urlopen("http://localhost:8080/pose_slam").read()
     position_json = json.loads(position_info)
     start_pose = (position_json['x'], position_json['y'], position_json['heading'])
     print("Recieved new target request", start_pose, end_pose, ", planning")
+    if end_pose[0] == 000:
+        spin_in_circle()
     if vo.norm(vo.sub(end_pose[:2], start_pose[:2])) < 0.1:
         print("Pure rotation")
         move_heading(target_info['heading'])

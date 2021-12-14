@@ -8,7 +8,9 @@ class SharedArray:
 
     """
     Set up a shared memory reader.
-    @
+    @param filename : shared memory filename.
+    @param dimensions : Tuple of dimensions of the array.
+    @param dtype : Data type of the array.
     """
     def __init__(self, filename, dimensions, dtype):
         self.filename = filename

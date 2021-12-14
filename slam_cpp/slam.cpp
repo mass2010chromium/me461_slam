@@ -1,10 +1,7 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
-//#include <vector>
-//using std::vector;
-#include <debug/vector>
-using __gnu_debug::vector;
+
 #include <deque>
 #include <ctime>
 #include <chrono>
@@ -12,29 +9,17 @@ using __gnu_debug::vector;
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <assert.h>
 
 #include "types.h"
 #include "utils.hpp"
-#include "fast_alloc.hpp"
-#include "dbscan.hpp"
+#include "fast_alloc.h"
+#include "dbscan.h"
 #include "optimize.hpp"
 
-#include <motionlib/vectorops.h>
-#include <motionlib/so3.h>
-#include <motionlib/se3.h>
-
-#include <opencv2/opencv.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/videoio.hpp>
-#include <opencv2/calib3d.hpp>
-
-#define BOOST_SPIRIT_THREADSAFE
-#include <boost/property_tree/json_parser.hpp>
-#include <boost/property_tree/ptree.hpp>
-
-#include <simple-web-server/client_http.hpp>
 #include <future>
+
+#include "headers.hpp"
 
 using namespace boost::property_tree;
 using HttpClient = SimpleWeb::Client<SimpleWeb::HTTP>;
@@ -97,7 +82,7 @@ static inline void map_scale(vptr dest, vptr src) {
     dest[1] = -src[1] * map_scaling + map_center;
 }
 
-void plot_lines(Mat& img, vector<vptr> lines, const cv::Scalar& color) {
+void plot_lines(Mat& img, vector<vptr>& lines, const cv::Scalar& color) {
     for (vptr line : lines) {
         cv::line(img, _Point(line_first(line)), _Point(line_second(line)), color);
     }
@@ -237,6 +222,12 @@ int main(int argc, char** argv)
     map_center = map_w / 2;
     map_scaling = map_json.get<double>("map_scale");
 
+    ptree config_json;
+    read_json_fname("./config.json", config_json);
+    auto canny_config = config_json.get_child("canny");
+    double canny_min = canny_config.get<double>("min");
+    double canny_max = canny_config.get<double>("max");
+
     cv::VideoCapture camera;
     char* image_buffer;
     bool camera_mode = false;
@@ -360,11 +351,13 @@ int main(int argc, char** argv)
             memcpy(disp.data, image_buffer, nbytes);
         }
         Mat gray;
-        cv::undistort(disp, undistort, camera_mat, distortion);
-        cv::cvtColor(undistort, gray, cv::COLOR_BGR2GRAY);
-        Mat _disp;
-        cv::cvtColor(gray, _disp, cv::COLOR_GRAY2BGR);
-        disp = undistort.clone();// - _disp;
+        if (!file_mode) {
+            cv::undistort(disp, undistort, camera_mat, distortion);
+            cv::cvtColor(undistort, gray, cv::COLOR_BGR2GRAY);
+            Mat _disp;
+            cv::cvtColor(gray, _disp, cv::COLOR_GRAY2BGR);
+            disp = undistort.clone();// - _disp;
+        }
 
         while (!pose_gotten) {};
         ptree pt;
@@ -413,12 +406,13 @@ int main(int argc, char** argv)
         }
 
         int height = disp.size().height;
-        Mat processing = undistort(cv::Range(height/2, height), cv::Range::all());
-        //cv::cvtColor(processing, processing, cv::COLOR_BGR2HSV);
-        //Mat hsv[3];
-        //cv::split(processing, hsv);
-        //cv::Canny(hsv[1], deriv, 225, 450);
-        cv::Canny(processing, deriv, 150, 300);
+        Mat processing = disp(cv::Range(height/2, height), cv::Range::all());
+        cv::cvtColor(processing, processing, cv::COLOR_BGR2HSV);
+        Mat hsv[3];
+        cv::split(processing, hsv);
+        cv::medianBlur(hsv[1], hsv[1], 5);
+        cv::Canny(hsv[1], deriv, canny_min, canny_max);
+        //cv::Canny(processing, deriv, 100, 200);
         deriv = deriv / 2;
 
         motion_dtype camera_pose[12];
@@ -435,6 +429,7 @@ int main(int argc, char** argv)
         }
 
         vector<line_t> lines = split_image(deriv, prev_transform_lines);
+        plot_lines(deriv, lines, 255);
         
         observe_mask = 0.0;
         disp_map = map_img.clone();
@@ -553,7 +548,7 @@ int main(int argc, char** argv)
                 moved[3] = r10*to_move[2] + r11*to_move[3] + dy;
                 transformed_lines.push_back(moved);
             }
-            auto _saved_lines = dbscan_filter_lines(transformed_lines, saved_lines, 0.25, 32);
+            auto _saved_lines = dbscan_filter_lines(transformed_lines, saved_lines, 0.25, 4);
             saved_lines = _saved_lines;
             for (auto line : saved_lines) {
                 if (line[4] > 4) {
@@ -727,6 +722,12 @@ int main(int argc, char** argv)
                     active_set[hold] = 0;
                 }
             }
+            if (sweep_state == 0) {
+                r_start = dist;
+            }
+            if (sweep_state != 2) {
+                r_end = dist;
+            }
             motion_dtype start[2];
             motion_dtype end[2];
             // More flipped angle garbage
@@ -769,9 +770,9 @@ int main(int argc, char** argv)
             key = cv::waitKeyEx(1);
         }
         if (display_images == 2 && keyframe_count == 0) {
-            cv::imshow("raw", disp);
+            //cv::imshow("raw", disp);
             cv::imshow("grad", deriv);
-            //cv::imshow("raw", hsv[1]);
+            cv::imshow("raw", hsv[1]);
             //cv::imshow("grad", hsv[2]);
             cv::imshow("map", disp_map);
             cv::imshow("mask", observe_mask);

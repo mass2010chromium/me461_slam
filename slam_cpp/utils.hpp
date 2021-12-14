@@ -94,7 +94,7 @@ static inline motion_dtype angle_distance(motion_dtype a, motion_dtype b) {
     return err2;
 }
 
-bool line_cmp(line_t i, line_t j) { return (i[0] < j[0]); }
+static inline bool line_cmp(line_t i, line_t j) { return (i[0] < j[0]); }
 
 // Get distance between point and line, in two ways.
 // First value is the distance to segment.
@@ -124,7 +124,7 @@ static inline void point_to_line(vptr_r ret, const vptr_r point, const line_t li
     ret[0] = line_dist;
 }
 
-motion_dtype line_distance(const line_t l1, const line_t l2) {
+static inline motion_dtype line_distance(const line_t l1, const line_t l2) {
     motion_dtype retvals[8];
     point_to_line(retvals + 0, line_first(l1), l2);
     point_to_line(retvals + 2, line_second(l1), l2);
@@ -152,7 +152,7 @@ motion_dtype line_distance(const line_t l1, const line_t l2) {
             + angle_err * (1 + min_deviation));
 }
 
-void linspace(vptr ret, motion_dtype center, motion_dtype spread, int step) {
+static inline void linspace(vptr ret, motion_dtype center, motion_dtype spread, int step) {
     motion_dtype spread_step = spread / step;
     for (int i = 0; i < step; ++i) {
         ret[i] = center - spread_step * (step - i);
