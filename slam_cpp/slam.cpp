@@ -410,6 +410,14 @@ int main(int argc, char** argv)
         cv::cvtColor(processing, processing, cv::COLOR_BGR2HSV);
         Mat hsv[3];
         cv::split(processing, hsv);
+        cv::threshold(hsv[1], hsv[1], 230, 240, cv::THRESH_BINARY);
+//        for (int i = 0; i < height/2; ++i) {
+//            for (int j = 0; j < disp.size().width; ++j) {
+//                if (hsv[1].at<double>(i,j) < 90) {
+//                    hsv[1].at<double>(i,j) = 60;
+//                }
+//            }
+//        }
         cv::medianBlur(hsv[1], hsv[1], 5);
         cv::Canny(hsv[1], deriv, canny_min, canny_max);
         //cv::Canny(processing, deriv, 100, 200);

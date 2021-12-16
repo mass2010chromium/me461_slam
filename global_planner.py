@@ -25,24 +25,24 @@ cap = SharedArray('.slam.map', (map_w,map_w,3), np.uint8)
 def get_planner_status():
     planner_status = urllib.request.urlopen("http://localhost:8080/planner_status").read()
     planner_status = json.loads(planner_status)
-    return planner_status['status']
+    return planner_status
 
 def send_target(x, y, t):
     data = json.dumps({'x': x, 'y': y, 't': t}).encode('utf-8')
     req = urllib.request.Request("http://localhost:8080/target", data=data)
     resp = urllib.request.urlopen(req)
-    status = get_planner_status()
+    status = get_planner_status()['status']
     for i in range(5):
         if status == 2:
             return False
         if status == 1:
             break
         time.sleep(1)
-        status = get_planner_status()
+        status = get_planner_status()['status']
     print("Planner recieved command")
     while status == 1:
         print("Robot moving...")
-        status = get_planner_status()
+        status = get_planner_status()['status']
         time.sleep(1)
     print("move finished, status=", status)
     return status == 0
@@ -50,7 +50,12 @@ def send_target(x, y, t):
 moved_distance = 100
 while True:
     print("Requesting planner status:")
-    status = get_planner_status()
+    planner_status = get_planner_status()
+    if planner_status['mode'] != 0:
+        print("Global planner disabled...")
+        time.sleep(5)
+        continue
+    status = planner_status['status']
     if status == 1:
         print("Robot is moving...")
         time.sleep(5)
@@ -75,9 +80,8 @@ while True:
             continue
         print(target_pos)
         status = send_target(target_pos[0], target_pos[1], angle)
-        if not status:
-            break
-        moved_distance += radius
+        if status:
+            moved_distance += radius
         if moved_distance >= 0.5:
             send_target(999, 0, 0)
             moved_distance = 0

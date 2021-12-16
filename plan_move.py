@@ -8,8 +8,12 @@ import time
 import sys
 
 do_move = False
+display = True
 if len(sys.argv) > 1:
-    if sys.argv[1] == "--move":
+    if sys.argv[1] == "--background":
+        do_move = True
+        display = False
+    elif sys.argv[1] == "--move":
         do_move = True
 
 from utils.read_mat import SharedArray
@@ -25,6 +29,7 @@ map_scale = map_info['map_scale']
 bound = (map_w / map_scale) / 2
 
 cap = SharedArray('.slam.map', (map_w,map_w,3), np.uint8)
+plan_out = SharedArray('.slam.plan', (map_w,map_w,3), np.uint8)
 
 import math
 from klampt.plan.cspace import CSpace, MotionPlan
@@ -116,8 +121,10 @@ def move_to_pose(image, end_pose):
         x = int(x)
         y = int(y)
         cv2.circle(image, (x, y), robot_radius_px, (0, 0, 255), 2)
-        cv2.imshow("plan", image)
-        cv2.waitKey(1)
+        plan_out.write(image)
+        if display:
+            cv2.imshow("plan", image)
+            cv2.waitKey(1)
         return
     path = []
     G = None
@@ -126,9 +133,16 @@ def move_to_pose(image, end_pose):
         planner.planMore(1)
         path = planner.getPath()
         G = planner.getRoadmap()
-        print(".", end="", flush=True)
     if path is None or len(path) == 0:
         print("Planner failed.")
+        x, y = pos_to_map(end_pose)
+        x = int(x)
+        y = int(y)
+        cv2.circle(image, (x, y), robot_radius_px, (0, 0, 255), 2)
+        plan_out.write(image)
+        if display:
+            cv2.imshow("plan", image)
+            cv2.waitKey(1)
         return
     print("!")
     print("Path has", len(path), "waypoints.")
@@ -137,8 +151,10 @@ def move_to_pose(image, end_pose):
         px = int(px)
         py = int(py)
         cv2.circle(image, (px, py), 1, (0, 0, 255), 1)
-    cv2.imshow("plan", image)
-    cv2.waitKey(1)
+    plan_out.write(image)
+    if display:
+        cv2.imshow("plan", image)
+        cv2.waitKey(1)
     if do_move:
         radius = 0.2
         speed = 0.1
@@ -156,8 +172,9 @@ def move_to_pose(image, end_pose):
             if not space.feasible(point):
                 print("Encountered obstacle, replanning")
                 return move_to_pose(image, end_pose)
-            cv2.imshow("map", image)
-            cv2.waitKey(50)
+            if display:
+                cv2.imshow("map", image)
+            time.sleep(0.050)
             done, cmd = follower.step(cur)
             if done:
                 break
@@ -177,8 +194,9 @@ resp = urllib.request.urlopen(req)
 print(resp.read())
 while True:
     ret, image = cap.read()
-    cv2.imshow("map", image)
-    cv2.waitKey(50)
+    if display:
+        cv2.imshow("map", image)
+    time.sleep(0.050)
     target_info = urllib.request.urlopen("http://localhost:8080/target").read()
     target_info = json.loads(target_info)
     if not target_info['new_request']:

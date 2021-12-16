@@ -29,6 +29,10 @@ class SharedArray:
         buffer = self.shm.read(self.size)
         return True, np.frombuffer(buffer, dtype=self.dtype, count=self.size, offset=0).reshape(self.dimensions)
 
+    def write(self, mat):
+        self.shm.seek(0)
+        return self.shm.write(mat.tobytes())
+
 if __name__ == "__main__":
     import cv2
     videocap = SharedArray("../.webserver.video", [480, 640, 3], dtype=np.uint8)

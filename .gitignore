@@ -14,3 +14,4 @@ web/server.log
 .slam.map
 __pycache__
 slam
+logs/*

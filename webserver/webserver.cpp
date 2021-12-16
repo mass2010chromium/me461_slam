@@ -94,11 +94,19 @@ RobotCommand current_target(0, 0, 0);
 // 2: failed
 int planner_status = 0;
 
+// 0: explore
+// 1: waypoint
+// 2: manual control
+int control_mode = 2;
+
 std::mutex image_lock;
 std::shared_ptr<vector<uchar>> image_data;
 
 std::mutex map_lock;
 std::shared_ptr<vector<uchar>> map_data;
+
+std::mutex plan_lock;
+std::shared_ptr<vector<uchar>> plan_data;
 
 // lol single threaded server go brr
 int main() {
@@ -159,7 +167,8 @@ int main() {
 
   server.resource["^/planner_status$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
     stringstream stream;
-    stream << "{\"status\":" << planner_status << "}";
+    stream << "{\"status\":" << planner_status << ",";
+    stream << "\"mode\":" << control_mode << "}";
     response->write(stream);
   };
 
@@ -167,7 +176,12 @@ int main() {
     try {
       ptree pt;
       read_json(request->content, pt);
-      planner_status = pt.get<int>("status");
+      if (pt.get_optional<int>("status").is_initialized()) {
+        planner_status = pt.get<int>("status");
+      }
+      if (pt.get_optional<int>("mode").is_initialized()) {
+        control_mode = pt.get<int>("mode");
+      }
       response->write("STATUS Command recieved");
     }
     catch (const exception& e) {
@@ -264,6 +278,45 @@ int main() {
         usleep(100000);
       }
       cout << "stream::closing connection" << endl;
+    });
+    work_thread.detach();
+  };
+
+  server.resource["^/plan$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
+    thread work_thread([response] {
+      SimpleWeb::CaseInsensitiveMultimap header;
+      header.emplace("Content-Type", "multipart/x-mixed-replace; boundary=\"Webserver_JPEG_Stream\"");
+      // DOOM super hackaround
+      response->close_connection_after_response = true;
+      response->write(SimpleWeb::StatusCode::success_ok, header);
+      response->close_connection_after_response = false;
+      cout << "map::new connection" << endl;
+      bool loop = true;
+      std::shared_ptr<vector<uchar>> _image;
+
+      const std::string sep = "--Webserver_JPEG_Stream";
+      (*response) << sep << "\r\n";
+      (*response) << "Content-Type: image/jpeg" << "\r\n\r\n";
+      while (loop) {
+        // TODO: bad multithreading performance lol
+        image_lock.lock();
+        _image = plan_data;
+        image_lock.unlock();
+        vector<uchar>* v = _image.get();
+
+        (*response) << std::string(v->begin(), v->end()) << "\r\n";
+        (*response) << "\r\n" << sep << "\r\n";
+        response->send([&loop](const error_code& c) {
+            if (c.value() != 0) {
+              loop = false;
+            }
+          });
+        // cout << "send " << s << endl;
+        //this_thread::sleep_for(chrono::seconds(0.1));
+        (*response) << "Content-Type: image/jpeg" << "\r\n\r\n";
+        usleep(100000);
+      }
+      cout << "map::closing connection" << endl;
     });
     work_thread.detach();
   };
@@ -422,11 +475,13 @@ int main() {
     send_buf[8] = '\n';
     u_int32_t index = 0;
     
+    for (int i = 0; i < 10; ++i) {
+        command_queue.push(RobotCommand(0, 0));
+    }
     while(1) {
-    
       RobotCommand new_command;
       if (command_queue.pop(new_command)) {
-        //cout << "got cmd " << new_command.cmd_v << ", " << new_command.cmd_w << endl;
+        cout << "got cmd " << new_command.cmd_v << ", " << new_command.cmd_w << endl;
         *((float*)send_buf) = new_command.cmd_v * METER_TO_FEET;
         *((float*)(send_buf + 4)) = new_command.cmd_w;
         sd_writen(send_buf, 9);
@@ -484,6 +539,7 @@ int main() {
   // Image is 480x640x3 bytes.
   char* buffer = map_file(".webserver.video", O_CREAT | O_RDWR, 480*640*3);
   char* slam_buffer = map_file(".slam.map", O_CREAT | O_RDWR, 400*400*3);
+  char* plan_buffer = map_file(".slam.plan", O_CREAT | O_RDWR, 400*400*3);
   cv::Mat map_img(400, 400, CV_8UC3);
   if (buffer == NULL) {
     perror("mmap failure");
@@ -509,6 +565,11 @@ int main() {
           map_data = std::make_shared<vector<uchar>>();
           cv::imencode(".jpg", map_img, *map_data, params);
           map_lock.unlock();
+          memcpy(map_img.data, plan_buffer, 400*400*3);
+          plan_lock.lock();
+          plan_data = std::make_shared<vector<uchar>>();
+          cv::imencode(".jpg", map_img, *plan_data, params);
+          plan_lock.unlock();
         }
       }
     }

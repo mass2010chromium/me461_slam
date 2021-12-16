@@ -16,6 +16,14 @@
         <div style="position: absolute; left: 700px; top: 0px; z-index: 1; margin: 5px;">
             <img src="stream" />
         </div>
+        <select id="modeSelect" style="position: absolute; left: 300px; top: 460px">
+            <option value="explore">Explore</option>
+            <option value="waypoint">Waypoint</option>
+            <option value="manual" selected>Manual Control</option>
+        </select>
+    <div style="position: absolute; left: 420px; top: 0px; width: 210px; height: 210px; background-color: blue; margin: 5px">
+            <img src="plan" style="width: 200px; height: 200px; margin: 5px"/>
+        </div>
 
         <script type = "text/javascript" src = "https://d3js.org/d3.v4.min.js"></script>
         <script type = "text/javascript" src = "include/joy_min.js"></script>
@@ -29,26 +37,90 @@
             const bb = d3.select('#svgcontainer').node().getBoundingClientRect();
 
             const xScale = d3.scaleLinear()
-                .domain([-3, 3])
+                .domain([-8, 8])
                 .range([0, width]);
 
             const yScale = d3.scaleLinear()
-                .domain([-3, 3])
+                .domain([-8, 8])
                 .range([height, 0]);
+
+            var mode_selector = document.getElementById("modeSelect");
+            let mode = 0;
+            let click_state = 0;
+            mode_selector.value = "explore";
+            mode_selector.addEventListener("change", () => {
+                target_circle.attr('visibility', 'hidden');
+                target_pointer.attr('visibility', 'hidden');
+                click_state = 0;
+                if (mode_selector.value == "explore") {
+                    mode = 0;
+                }
+                else if (mode_selector.value == "waypoint") {
+                    mode = 1;
+                }
+                else if (mode_selector.value == "manual") {
+                    mode = 2;
+                }
+                let data = { "mode": mode };
+                fetch("planner_status", {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(data)
+                    });
+            });
+            
+            let click_x = 0;
+            let click_y = 0;
+            let click_angle = 0;
+            const pointer_dist = 0.5;
+            var svg_container = document.getElementById("svgcontainer");
+            svg_container.addEventListener('mousemove', (e) => {
+                if (mode != 1) { return; }
+                if (click_state != 1) { return; }
+                let mouse_x = (event.layerX - width/2) / 25;
+                let mouse_y = (width/2 - event.layerY) / 25;
+                let dy = mouse_y - click_y;
+                let dx = mouse_x - click_x;
+                let angle = Math.atan2(dy, dx);
+                target_pointer
+                   .attr('x1', xScale(click_x))
+                   .attr('y1', yScale(click_y))
+                   .attr('x2', xScale(click_x + pointer_dist * Math.cos(angle)))
+                   .attr('y2', yScale(click_y + pointer_dist * Math.sin(angle)));
+            });
+            svg_container.addEventListener('click', event => {
+                if (mode != 1) { return; }
+                let mouse_x = (event.layerX - width/2) / 25;
+                let mouse_y = (width/2 - event.layerY) / 25;
+                if (click_state == 3) {
+                    click_state = 0;
+                }
+                if (click_state == 0) {
+                    click_x = mouse_x;
+                    click_y = mouse_y;
+                    target_circle.attr('cx', xScale(mouse_x)).attr('cy', yScale(mouse_y)).attr('visibility', 'visible');
+                    target_pointer.attr('visibility', 'visible');
+                    click_state = 1;
+                }
+                else if (click_state == 1) {
+                    let dy = mouse_y - click_y;
+                    let dx = mouse_x - click_x;
+                    click_angle = Math.atan2(dy, dx);
+                    click_state = 2;
+                }
+            });
 
             const line = d3.line()
                 .curve(d3.curveNatural)
                 .x(d => xScale(d[0]))
                 .y(d => yScale(d[1]));
 
-            const line2 = d3.line()
-                .curve(d3.curveNatural)
-                .x(d => xScale(d[0]))
-                .y(d => yScale(d[1]));
-
             let points = [];
             svg.append('path').attr('d', line(points));
-            svg.append('line').style('stroke', 'orange');
+            let robot_pointer = svg.append('line').style('stroke', 'orange');
+            let robot_circle = svg.append('circle').style('fill', 'none').style('stroke', 'orange').attr("r", 10);
+            let target_pointer = svg.append('line').style('stroke', 'green');
+            let target_circle = svg.append('circle').style('fill', 'none').style('stroke', 'green').attr("r", 10);
 
             // TODO: stream instead of spam http
             let target_div = document.getElementById("main");
@@ -60,35 +132,54 @@
                         setTimeout(refresh, 20);
                         if (points.length >= 1000) {
                             points.shift();
-                        }
+                    }
                         points.push([dat.x, dat.y]);
-                        const pointer_dist = 0.1;
 
                         svg.selectAll('path')
                            .data([points])
                            .attr('d', line)
                            .attr('stroke', 'black')
                            .attr('fill', 'none');
-                        svg.selectAll('line')
+                        robot_pointer
                            .attr('x1', xScale(dat.x))
                            .attr('y1', yScale(dat.y))
                            .attr('x2', xScale(dat.x + pointer_dist * Math.cos(dat.heading)))
                            .attr('y2', yScale(dat.y + pointer_dist * Math.sin(dat.heading)));
+                        robot_circle.attr('cx', xScale(dat.x)).attr('cy', yScale(dat.y));
 
-                        const v_command = joy.GetY() / 500.0;
-                        const w_command = -joy.GetX() / 100.0;
-                        if (v_command != 0 || w_command != 0) {
-                            let data = { v: v_command, w: w_command };
-                            fetch("raw", {
-                                    method: 'POST',
-                                    headers: {'Content-Type': 'application/json'},
-                                    body: JSON.stringify(data)
-                                });
-                                //.then(res => console.log("command sent"));
-                        }
                     });
             }
             setTimeout(refresh, 20);
-        </script>
+
+            function send_command() {
+                if (mode == 1) {
+                    if (click_state == 2) {
+                        click_state = 3;
+                        let data = { x: click_x, y: click_y, t: click_angle};
+                        fetch("target", {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify(data)
+                            }).then(res => {
+                            });
+                    }
+                }
+                else if (mode == 2) {
+                    const v_command = joy.GetY() / 500.0;
+                    const w_command = -joy.GetX() / 100.0;
+                    if (v_command != 0 || w_command != 0) {
+                        let data = { v: v_command, w: w_command };
+                        fetch("raw", {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify(data)
+                            });
+                            //.then(res => console.log("command sent"));
+                    }
+                }
+                setTimeout(send_command, 20);
+            }
+            setTimeout(send_command, 20);
+    </script>
     </body>
 </html>
