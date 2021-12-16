@@ -53,9 +53,9 @@ motion_dtype loss(vector<line_t>& match_subset, vector<line_t>& saved_subset,
 }
 
 const motion_dtype THETA_SPREAD_INIT = 0.3;
-const motion_dtype DELTA_SPREAD_INIT = 0.05;
-const int THETA_STEPS = 2;
-const int DELTA_STEPS = 2;
+const motion_dtype DELTA_SPREAD_INIT = 0.2;
+const int THETA_STEPS = 12;
+const int DELTA_STEPS = 12;
 const int REFINE_STEPS = 4;
 motion_dtype register_lines(vptr ret, vector<line_t>& match_subset, vector<line_t>& saved_subset) {
     motion_dtype thetas[THETA_STEPS];
@@ -88,7 +88,7 @@ motion_dtype register_lines(vptr ret, vector<line_t>& match_subset, vector<line_
                 }
             }
         }
-        printf("refining... (%f, %f, %f) %f\n", ret[0], ret[1], ret[2], best_loss);
+        //printf("refining... (%f, %f, %f) %f\n", ret[0], ret[1], ret[2], best_loss);
     }
     printf("Computed transform: (%f, %f, %f) %f\n", ret[0], ret[1], ret[2], best_loss);
     return best_loss;

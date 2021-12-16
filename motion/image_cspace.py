@@ -14,7 +14,7 @@ map_center = map_w/2
 map_scale = map_info['map_scale']
 bound = (map_w / map_scale) / 2
 
-robot_radius = 0.3
+robot_radius = 0.4
 robot_radius_px = math.ceil(robot_radius * map_scale)
 robot_ksize = 2*robot_radius_px+1
 robot_kernel = np.zeros([robot_ksize, robot_ksize], dtype=np.uint8)
@@ -53,5 +53,5 @@ class ImageCSpace(CSpace):
                                           px-robot_radius_px:px+robot_radius_px+1] > 80
         collision_score = image_section.ravel().dot(robot_kernel.ravel())
         #print(q, collision_score)
-        return bool(collision_score < 20)
+        return bool(collision_score < 10)
 

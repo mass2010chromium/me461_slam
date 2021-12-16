@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.0)
 
 #set(CMAKE_BUILD_TYPE Debug)
+#set (CMAKE_CXX_FLAGS "-O3 -funsafe-math-optimizations -mcpu=cortex-a72 -mfloat-abi=hard -mfpu=neon-fp-armv8 -mtune=cortex-a72")
 
 project( slam )
 find_package( OpenCV REQUIRED )

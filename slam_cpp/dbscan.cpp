@@ -60,7 +60,25 @@ vector<int> dbscan(int& num_clusters, motion_dtype eps, int min_samples,
     return labels;
 }
 
-void merge_lines(line_t ret, vector<pair<vptr, motion_dtype>>& points) {
+void project_line(line_t ret, line_t src, vector<vptr>& points) {
+    motion_dtype line_zero[2] = {src[0], src[1]};
+    motion_dtype line_one[2]; __vo_subv(line_one, line_second(src), line_first(src), 2);
+    __vo_unit(line_one, line_one, 1e-5, 2);
+    motion_dtype b_aligned = __vo_dot(line_zero, line_one, 2);
+    __vo_madd(line_zero, line_zero, line_one, -b_aligned, 2);
+    motion_dtype min_dir = __vo_dot(points[0], line_one, 2);
+    motion_dtype max_dir = min_dir;
+    for (int i = 1; i < points.size(); ++i) {
+        auto point = points[i];
+        motion_dtype res = __vo_dot(point, line_one, 2);
+        if (res < min_dir) { min_dir = res; }
+        if (res > max_dir) { max_dir = res; }
+    }
+    __vo_madd(line_first(ret), line_zero, line_one, min_dir, 2);
+    __vo_madd(line_second(ret), line_zero, line_one, max_dir, 2);
+}
+
+void merge_lines(line_t ret, vector<vptr>& points) {
     int n_points = points.size();
 //    Matrix<motion_dtype, Dynamic, 2> A(n_points, 2);
 //    Eigen::DiagonalMatrix<motion_dtype, Dynamic> W(n_points);
@@ -76,8 +94,8 @@ void merge_lines(line_t ret, vector<pair<vptr, motion_dtype>>& points) {
     motion_dtype y2_sum = 0;
     motion_dtype xy_sum = 0;
     for (int i = 0; i < n_points; ++i) {
-        auto x = points[i].first[0];
-        auto y = points[i].first[1];
+        auto x = points[i][0];
+        auto y = points[i][1];
         //printf("%f %f\n", x, y);
         x_sum += x;
         y_sum += y;
@@ -109,9 +127,9 @@ void merge_lines(line_t ret, vector<pair<vptr, motion_dtype>>& points) {
     __vo_unit(perp2, perp2, 1e-7, 2);
     motion_dtype scratch[2];
     for (int i = 0; i < n_points; ++i) {
-        scratch[0] = points[i].first[0]; scratch[1] = points[i].first[1] - b1;
+        scratch[0] = points[i][0]; scratch[1] = points[i][1] - b1;
         e1 += fabs(__vo_dot(scratch, perp1, 2));
-        scratch[1] = points[i].first[1] - b2;
+        scratch[1] = points[i][1] - b2;
         e2 += fabs(__vo_dot(scratch, perp2, 2));
     }
     //printf("e1 %f e2 %f\n", e1, e2);
@@ -128,25 +146,13 @@ void merge_lines(line_t ret, vector<pair<vptr, motion_dtype>>& points) {
 
     //printf("least squares: %fx + %f\n", m, b);
     //printf("B: %f, reject: %fx + %f\n", B, _m, _b);
-    motion_dtype line_zero[2] = {0, b};
-    motion_dtype line_one[2] = {1, m};
-    __vo_unit(line_one, line_one, 1e-5, 2);
-    motion_dtype b_aligned = __vo_dot(line_zero, line_one, 2);
-    __vo_madd(line_zero, line_zero, line_one, -b_aligned, 2);
-    motion_dtype min_dir = __vo_dot(points[0].first, line_one, 2);
-    motion_dtype max_dir = min_dir;
-    for (int i = 1; i < n_points; ++i) {
-        auto point = points[i].first;
-        motion_dtype res = __vo_dot(point, line_one, 2);
-        if (res < min_dir) { min_dir = res; }
-        if (res > max_dir) { max_dir = res; }
-    }
-    __vo_madd(line_first(ret), line_zero, line_one, min_dir, 2);
-    __vo_madd(line_second(ret), line_zero, line_one, max_dir, 2);
+    motion_dtype match_line[4] = {0, b, 1, m+b};
+    project_line(ret, match_line, points);
     //printf("final %f: %f %f %f %f\n", __vo_dot(line_one, line_zero, 2), ret[0], ret[1], ret[2], ret[3]);
 }
 
-vector<line_t> dbscan_filter_lines(vector<line_t>& lines, vector<vptr>& existings, motion_dtype eps, int match_age) {
+vector<line_t> dbscan_filter_lines(vector<line_t>& lines, vector<vptr>& existings,
+                                   motion_dtype eps, int match_age) {
     int new_line_size = lines.size();
     for (auto line : existings) {
         lines.push_back(line);
@@ -163,10 +169,10 @@ vector<line_t> dbscan_filter_lines(vector<line_t>& lines, vector<vptr>& existing
     //cout << endl;
 
     vector<line_t> ret;
-    vector<vector<pair<vptr, motion_dtype>>> boxes;
+    vector<vector<vptr>> boxes;
     vector<int> ages;
     for (int i = 0; i < num_clusters; ++i) {
-        boxes.push_back(vector<pair<vptr, motion_dtype>>());
+        boxes.push_back(vector<vptr>());
         ages.push_back(1);
     }
     vector<int> groupsizes(num_clusters, 0);
@@ -207,8 +213,8 @@ vector<line_t> dbscan_filter_lines(vector<line_t>& lines, vector<vptr>& existing
             }
             for (int j = 0; j < age; ++j) {
                 // TODO jank af weighted method
-                boxes[groups[i]].push_back(std::make_pair(p1, age));
-                boxes[groups[i]].push_back(std::make_pair(p2, age));
+                boxes[groups[i]].push_back(p1);
+                boxes[groups[i]].push_back(p2);
             }
             if (i >= new_line_size) {
                 ages[groups[i]] = match_age;
@@ -221,6 +227,99 @@ vector<line_t> dbscan_filter_lines(vector<line_t>& lines, vector<vptr>& existing
         if (box_points.size() == 0) { continue; }
         vptr new_line = fast_alloc_vec(5);
         merge_lines(new_line, box_points);
+        new_line[4] = ages[i];
+        ret.push_back(new_line);
+    }
+    //int x;
+    //std::cin >> x;
+    return ret;
+}
+
+vector<line_t> dbscan_extend_lines(vector<line_t>& lines, vector<vptr>& existings,
+                                   motion_dtype eps, int match_age) {
+    int new_line_size = lines.size();
+    for (auto line : existings) {
+        lines.push_back(line);
+    }
+    //for (auto line : lines) {
+    //    printf("%f %f, %f %f [%f]\n", line[0], line[1], line[2], line[3], line[4]);
+    //}
+
+    int num_clusters;
+    vector<int> groups = dbscan(num_clusters, eps, 1, line_distance, lines);
+    //for (auto group : groups) {
+    //    cout << group << " ";
+    //}
+    //cout << endl;
+
+    vector<line_t> ret;
+    vector<pair<vector<vptr>, vector<vptr>>> boxes;
+    vector<int> ages;
+    for (int i = 0; i < num_clusters; ++i) {
+        boxes.push_back(std::make_pair(vector<vptr>(), vector<vptr>()));
+        ages.push_back(1);
+    }
+    vector<int> groupsizes(num_clusters, 0);
+    for (int group : groups) {
+        if (group != -1) {
+            ++groupsizes[group];
+        }
+    }
+    for (int i = 0; i < lines.size(); ++i) {
+        if (groups[i] == -1 || groupsizes[groups[i]] == 1) {
+            vptr l = fast_alloc_vec(5);
+            memcpy(l, lines[i], 5*sizeof(motion_dtype));
+            if (i < new_line_size) {
+                l[4] = 1;
+                ret.push_back(l);
+            }
+            else {
+                // NOTE: DO NOT REUSE MEMORY! it is important in this case that
+                // the returned array has "fresh" line pointers, or they will expire!
+                --l[4];
+                if (l[4] > 0) {
+                    ret.push_back(l);
+                }
+                else {
+                    //cout << "old death" << endl;
+                }
+            }
+        }
+        else {
+            vptr p1 = line_first(lines[i]);
+            vptr p2 = line_second(lines[i]);
+            motion_dtype age;
+            if (i < new_line_size) {
+                boxes[groups[i]].second.push_back(p1);
+                boxes[groups[i]].second.push_back(p2);
+            }
+            else {
+                boxes[groups[i]].first.push_back(p1);
+                boxes[groups[i]].first.push_back(p2);
+            }
+            if (i >= new_line_size) {
+                ages[groups[i]] = match_age;
+                //cout << "old match" << endl;
+            }
+        }
+    }
+    for (int i = 0; i < boxes.size(); ++i) {
+        auto& old_points = boxes[i].first;
+        auto& new_points = boxes[i].second;
+        vptr new_line;
+        if (old_points.size() == 0) {
+            if (new_points.size() == 0) { continue; }
+            new_line = fast_alloc_vec(5);
+            merge_lines(new_line, new_points);
+        }
+        else {
+            motion_dtype old_line[4];
+            merge_lines(old_line, old_points);
+            new_points.push_back(line_first(old_line));
+            new_points.push_back(line_second(old_line));
+            new_line = fast_alloc_vec(5);
+            project_line(new_line, old_line, new_points);
+        }
         new_line[4] = ages[i];
         ret.push_back(new_line);
     }

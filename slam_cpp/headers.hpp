@@ -12,6 +12,7 @@ using std::vector;
 
 #include <simple-web-server/client_http.hpp>
 
+#include "types.h"
 #include <motionlib/vectorops.h>
 #include <motionlib/so3.h>
 #include <motionlib/se3.h>

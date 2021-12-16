@@ -1,6 +1,7 @@
 #include <simple-web-server/server_http.hpp>
 #include <future>
 #include <math.h>
+#include <memory>
 
 #include <unistd.h>
 #include <sys/mman.h>
@@ -36,6 +37,23 @@ using namespace boost::property_tree;
 
 using HttpServer = SimpleWeb::Server<SimpleWeb::HTTP>;
 
+char* map_file(std::string filename, int open_flags, size_t map_size) {
+    cout << "Mapping file " << filename << endl;
+    int mmap_file = open(filename.c_str(), open_flags, 0777);
+    if (mmap_file == -1) {
+        perror("open mmap file failure");
+        return NULL;
+    }
+    ftruncate(mmap_file, map_size);
+    char* ret = (char*) mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED_VALIDATE, mmap_file, 0);
+    if (ret == NULL) {
+        perror("mmap failure");
+        return NULL;
+    }
+    return ret;
+}
+
+
 const float FEET_TO_METER = 0.3048;
 const float METER_TO_FEET = 3.2808399;
 
@@ -70,6 +88,17 @@ typedef struct RobotCommand RobotCommand;
 boost::lockfree::queue<RobotCommand> command_queue(128);
 boost::lockfree::queue<RobotCommand> target_queue(16);
 RobotCommand current_target(0, 0, 0);
+
+// 0: idle
+// 1: planning
+// 2: failed
+int planner_status = 0;
+
+std::mutex image_lock;
+std::shared_ptr<vector<uchar>> image_data;
+
+std::mutex map_lock;
+std::shared_ptr<vector<uchar>> map_data;
 
 // lol single threaded server go brr
 int main() {
@@ -128,6 +157,24 @@ int main() {
     }
   };
 
+  server.resource["^/planner_status$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
+    stringstream stream;
+    stream << "{\"status\":" << planner_status << "}";
+    response->write(stream);
+  };
+
+  server.resource["^/planner_status$"]["POST"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
+    try {
+      ptree pt;
+      read_json(request->content, pt);
+      planner_status = pt.get<int>("status");
+      response->write("STATUS Command recieved");
+    }
+    catch (const exception& e) {
+      response->write(SimpleWeb::StatusCode::client_error_bad_request, e.what());
+    }
+  };
+
   server.resource["^/pose_slam$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
     stringstream stream;
     stream << "{\"x\":" << slam_info.x
@@ -149,7 +196,7 @@ int main() {
       slam_info.v = pt.get<float>("v");
       slam_info.w = pt.get<float>("w");
       slam_pose_lock.unlock();
-      response->write("POSE Command recieved");
+      response->write("slam pose update recieved");
     }
     catch (const exception& e) {
       response->write(SimpleWeb::StatusCode::client_error_bad_request, e.what());
@@ -184,22 +231,78 @@ int main() {
   server.resource["^/stream$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
     thread work_thread([response] {
       SimpleWeb::CaseInsensitiveMultimap header;
-      header.emplace("transfer-encoding", "chunked");
+      //header.emplace("transfer-encoding", "chunked");
+      header.emplace("Content-Type", "multipart/x-mixed-replace; boundary=\"Webserver_JPEG_Stream\"");
+      // DOOM super hackaround
+      response->close_connection_after_response = true;
       response->write(SimpleWeb::StatusCode::success_ok, header);
-      cout << "new connection" << endl;
+      response->close_connection_after_response = false;
+      cout << "stream::new connection" << endl;
       bool loop = true;
+      std::shared_ptr<vector<uchar>> _image;
+
+      const std::string sep = "--Webserver_JPEG_Stream";
+      (*response) << sep << "\r\n";
+      (*response) << "Content-Type: image/jpeg" << "\r\n\r\n";
       while (loop) {
-        // this_thread::sleep_for(chrono::seconds(0.01));
-        auto s = "4\r\nhmmm\r\n";
-        (*response) << s;
+        // TODO: bad multithreading performance lol
+        image_lock.lock();
+        _image = image_data;
+        image_lock.unlock();
+        vector<uchar>* v = _image.get();
+
+        (*response) << std::string(v->begin(), v->end()) << "\r\n";
+        (*response) << "\r\n" << sep << "\r\n";
         response->send([&loop](const error_code& c) {
             if (c.value() != 0) {
               loop = false;
             }
           });
         // cout << "send " << s << endl;
+        //this_thread::sleep_for(chrono::seconds(0.1));
+        (*response) << "Content-Type: image/jpeg" << "\r\n\r\n";
+        usleep(100000);
       }
-      cout << "closing connection" << endl;
+      cout << "stream::closing connection" << endl;
+    });
+    work_thread.detach();
+  };
+
+  server.resource["^/map$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
+    thread work_thread([response] {
+      SimpleWeb::CaseInsensitiveMultimap header;
+      header.emplace("Content-Type", "multipart/x-mixed-replace; boundary=\"Webserver_JPEG_Stream\"");
+      // DOOM super hackaround
+      response->close_connection_after_response = true;
+      response->write(SimpleWeb::StatusCode::success_ok, header);
+      response->close_connection_after_response = false;
+      cout << "map::new connection" << endl;
+      bool loop = true;
+      std::shared_ptr<vector<uchar>> _image;
+
+      const std::string sep = "--Webserver_JPEG_Stream";
+      (*response) << sep << "\r\n";
+      (*response) << "Content-Type: image/jpeg" << "\r\n\r\n";
+      while (loop) {
+        // TODO: bad multithreading performance lol
+        image_lock.lock();
+        _image = map_data;
+        image_lock.unlock();
+        vector<uchar>* v = _image.get();
+
+        (*response) << std::string(v->begin(), v->end()) << "\r\n";
+        (*response) << "\r\n" << sep << "\r\n";
+        response->send([&loop](const error_code& c) {
+            if (c.value() != 0) {
+              loop = false;
+            }
+          });
+        // cout << "send " << s << endl;
+        //this_thread::sleep_for(chrono::seconds(0.1));
+        (*response) << "Content-Type: image/jpeg" << "\r\n\r\n";
+        usleep(100000);
+      }
+      cout << "map::closing connection" << endl;
     });
     work_thread.detach();
   };
@@ -376,19 +479,38 @@ int main() {
     }
   });
 
+  const int image_buffer_size = 10;
   cv::Mat m;
   // Image is 480x640x3 bytes.
-  int mmap_file = open(".webserver.video", O_CREAT | O_RDWR, 0777);
-  ftruncate(mmap_file, 1000000);
-  char* buffer = (char*) mmap(NULL, 1000000, PROT_READ | PROT_WRITE, MAP_SHARED_VALIDATE, mmap_file, 0);
+  char* buffer = map_file(".webserver.video", O_CREAT | O_RDWR, 480*640*3);
+  char* slam_buffer = map_file(".slam.map", O_CREAT | O_RDWR, 400*400*3);
+  cv::Mat map_img(400, 400, CV_8UC3);
   if (buffer == NULL) {
     perror("mmap failure");
   }
   else {
-    while (1) {
+    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 90};
+    size_t frame = 0;
+    for (;; ++frame) {
       bool res = camera.read(m);
       size_t nbytes = (m.dataend - m.datastart) * sizeof(uchar);
       memcpy(buffer, m.data, nbytes);
+      
+      if (frame % 3 == 0) {
+        image_lock.lock();
+        image_data = std::make_shared<vector<uchar>>();
+        cv::imencode(".jpg", m, *image_data, params);
+        image_lock.unlock();
+      }
+      if (frame % 30 == 0) {
+        if (slam_buffer != NULL) {
+          memcpy(map_img.data, slam_buffer, 400*400*3);
+          map_lock.lock();
+          map_data = std::make_shared<vector<uchar>>();
+          cv::imencode(".jpg", map_img, *map_data, params);
+          map_lock.unlock();
+        }
+      }
     }
   }
 

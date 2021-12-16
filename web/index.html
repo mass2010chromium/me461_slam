@@ -4,20 +4,26 @@
         <meta charset="UTF-8" />
     </head>
     <body>
-        <div id="main">
+        <div id="svgcontainer" style="position: absolute; left: 0px; top: 0px; margin: 10px; z-index: 2;">
+        </div>
+        <div style="position: absolute; left: 0px; top: 0px; width: 410px; height: 410px; margin: 5px; z-index: 1; background-color: black">
+            <img src="map" style="margin: 5px"/>
+        </div>
+        <div id="joyDiv" style="position: absolute; top: 460px; left: 0px; width:200px;height:200px;margin-bottom:20px;"></div>
+        <div id="main" style="position: absolute; top: 430px; z-index: 3">
             mmm
         </div>
-        <div id="svgcontainer">
+        <div style="position: absolute; left: 700px; top: 0px; z-index: 1; margin: 5px;">
+            <img src="stream" />
         </div>
-        <div id="joyDiv" style="width:200px;height:200px;margin-bottom:20px;"></div>
 
         <script type = "text/javascript" src = "https://d3js.org/d3.v4.min.js"></script>
         <script type = "text/javascript" src = "include/joy_min.js"></script>
         <script>
             var joy = new JoyStick('joyDiv');
 
-            var width = 300;
-            var height = 300;
+            var width = 400;
+            var height = 400;
             var svg = d3.select("#svgcontainer")
                 .append("svg").attr("width", width).attr("height", height);
             const bb = d3.select('#svgcontainer').node().getBoundingClientRect();
@@ -83,23 +89,6 @@
                     });
             }
             setTimeout(refresh, 20);
-
-            class LogStream {
-                constructor() {
-                }
-                
-                write(chunk) {
-                    console.log(chunk);
-                }
-                
-                close() {
-                
-                }
-            }
-            //fetch("stream")
-            //    .then(rs => rs.body)
-            //    .then(rs => rs.pipeTo(new WritableStream(new LogStream())))
-            //    .finally(() => console.log("done"));
         </script>
     </body>
 </html>

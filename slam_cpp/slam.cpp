@@ -268,7 +268,7 @@ int main(int argc, char** argv)
         if (image_buffer == NULL) {
             return 1;
         }
-        map_buffer = map_file("../.slam.map", O_RDWR | O_CREAT, 1000000);
+        map_buffer = map_file("../.slam.map", O_RDWR, 1000000);
         if (map_buffer == NULL) {
             return 1;
         }
@@ -286,7 +286,7 @@ int main(int argc, char** argv)
         cv::namedWindow("match", cv::WINDOW_AUTOSIZE);
     }
 
-    double prev_pose_raw[5];
+    motion_dtype prev_pose_raw[5];
     //vector<line_t> prev_points;
     vector<vptr> prev_lines;
     vector<vptr> saved_lines;
@@ -469,6 +469,12 @@ int main(int argc, char** argv)
             motion_dtype scratch[2];
             motion_dtype line_rel[4];
             for (auto line_score : saved_lines) {
+                motion_dtype ret[2];
+                point_to_line(ret, pose, line_score);
+                if (ret[0] > 1) {
+                    ++line_score[4];
+                    continue;
+                }
                 __vo_subv(line_first(line_rel), line_first(line_score), pose, 2);
                 __vo_subv(line_second(line_rel), line_second(line_score), pose, 2);
                 motion_dtype angle1 = normalize_angle(atan2(line_rel[1], line_rel[0]));
@@ -549,12 +555,16 @@ int main(int argc, char** argv)
                 transformed_lines.push_back(moved);
             }
             auto _saved_lines = dbscan_filter_lines(transformed_lines, saved_lines, 0.25, 4);
-            saved_lines = _saved_lines;
-            for (auto line : saved_lines) {
-                if (line[4] > 4) {
-                    line[4] = 4;
+            saved_lines = vector<vptr>();
+            for (auto line_score : _saved_lines) {
+                if ((__vo_norm(line_first(line_score), 2) > 1
+                    || __vo_norm(line_second(line_score), 2) > 1) && line_score[4] == 1) {
+                    // Ignore far away points that are new.
+                    continue;
                 }
+                saved_lines.push_back(line_score);
             }
+            saved_lines = _saved_lines;
 
             pose[0] += dx;
             pose[1] += dy;
@@ -789,7 +799,7 @@ int main(int argc, char** argv)
         }
         auto end = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds = end-start;
-        std::cout << "SPF: " << elapsed_seconds.count() <<  std::endl;
+        //std::cout << "SPF: " << elapsed_seconds.count() <<  std::endl;
 
         std::stringstream pose_info_out;
         pose_info_out << "{\"x\":" << pose[0]

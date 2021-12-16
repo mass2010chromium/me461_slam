@@ -71,20 +71,36 @@ def move_heading(target_angle):
 
 def spin_in_circle():
     cur = get_pose()
-    heading = cur[2] % (2*math.pi)
-    steps = 10
-    for i in range(steps):
-        target = heading + 2*math.pi/steps
-        move_heading(target)
-    move_heading(heading)
+    heading = cur[2]
+    target_angle = heading + 2*math.pi
+    while True:
+        cur = get_pose()
+        heading = cur[2]
+        angle_error = target_angle - heading
+    
+        if abs(angle_error) < 0.1:
+            ok += 1
+            if ok > 30:
+                data = json.dumps({'v': 0, 'w': 0}).encode('utf-8')
+                req = urllib.request.Request("http://localhost:8080/raw", data=data)
+                resp = urllib.request.urlopen(req)
+                break
+        else:
+            ok = 0
+    
+        data = json.dumps({'v': 0, 'w': np.clip(kv * angle_error, -1, 1)}).encode('utf-8')
+        req = urllib.request.Request("http://localhost:8080/raw", data=data)
+        resp = urllib.request.urlopen(req)
 
 def move_to_pose(image, end_pose):
     position_info = urllib.request.urlopen("http://localhost:8080/pose_slam").read()
     position_json = json.loads(position_info)
     start_pose = (position_json['x'], position_json['y'], position_json['heading'])
     print("Recieved new target request", start_pose, end_pose, ", planning")
-    if end_pose[0] == 000:
+    if end_pose[0] == 999:
+        print("spin in circle")
         spin_in_circle()
+        return
     if vo.norm(vo.sub(end_pose[:2], start_pose[:2])) < 0.1:
         print("Pure rotation")
         move_heading(target_info['heading'])
@@ -139,8 +155,7 @@ def move_to_pose(image, end_pose):
             space.update_map(image)
             if not space.feasible(point):
                 print("Encountered obstacle, replanning")
-                move_to_pose(image, end_pose)
-                return
+                return move_to_pose(image, end_pose)
             cv2.imshow("map", image)
             cv2.waitKey(50)
             done, cmd = follower.step(cur)
@@ -149,9 +164,17 @@ def move_to_pose(image, end_pose):
             data = json.dumps({'v': cmd[0], 'w': cmd[1]}).encode('utf-8')
             req = urllib.request.Request("http://localhost:8080/raw", data=data)
             resp = urllib.request.urlopen(req)
-
+        delta = vo.norm(vo.sub(cur[:2], end_pose[:2]))
+        if delta > radius:
+            return False
         move_heading(end_pose[2])
+        return True
+    return False
 
+data = json.dumps({'status': 0}).encode('utf-8')
+req = urllib.request.Request("http://localhost:8080/planner_status", data=data)
+resp = urllib.request.urlopen(req)
+print(resp.read())
 while True:
     ret, image = cap.read()
     cv2.imshow("map", image)
@@ -160,5 +183,16 @@ while True:
     target_info = json.loads(target_info)
     if not target_info['new_request']:
         continue
+    data = json.dumps({'status': 1}).encode('utf-8')
+    req = urllib.request.Request("http://localhost:8080/planner_status", data=data)
+    resp = urllib.request.urlopen(req)
     end_pose = (target_info['x'], target_info['y'], target_info['heading'])
-    move_to_pose(image, end_pose)
+    res = move_to_pose(image, end_pose)
+
+    if res:
+        status = 0
+    else:
+        status = 2
+    data = json.dumps({'status': status}).encode('utf-8')
+    req = urllib.request.Request("http://localhost:8080/planner_status", data=data)
+    resp = urllib.request.urlopen(req)
