@@ -47,7 +47,7 @@
             var mode_selector = document.getElementById("modeSelect");
             let mode = 0;
             let click_state = 0;
-            mode_selector.value = "explore";
+            mode_selector.value = "manual";
             mode_selector.addEventListener("change", () => {
                 target_circle.attr('visibility', 'hidden');
                 target_pointer.attr('visibility', 'hidden');
@@ -118,9 +118,9 @@
             let points = [];
             svg.append('path').attr('d', line(points));
             let robot_pointer = svg.append('line').style('stroke', 'orange');
-            let robot_circle = svg.append('circle').style('fill', 'none').style('stroke', 'orange').attr("r", 10);
+            let robot_circle = svg.append('circle').style('fill', 'none').style('stroke', 'orange').attr("r", 8);
             let target_pointer = svg.append('line').style('stroke', 'green');
-            let target_circle = svg.append('circle').style('fill', 'none').style('stroke', 'green').attr("r", 10);
+            let target_circle = svg.append('circle').style('fill', 'none').style('stroke', 'green').attr("r", 8).attr("cx", 999);
 
             // TODO: stream instead of spam http
             let target_div = document.getElementById("main");
