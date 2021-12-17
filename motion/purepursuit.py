@@ -130,7 +130,7 @@ if __name__ == "__main__":
     import urllib.request
     import json
     def get_pose():
-        position_info = urllib.request.urlopen("http://localhost:8080/pose").read()
+        position_info = urllib.request.urlopen("http://localhost:8080/pose_raw").read()
         position_json = json.loads(position_info)
         return (position_json['x'], position_json['y'], position_json['heading'])
 
@@ -139,9 +139,9 @@ if __name__ == "__main__":
     path1 = [(0, 0), (1, 0), (1, 1), (0.5, 1)]
     path2 = [(1, 1), (0, 1), (0, 0), (0.5, 0)]
 
-    kv = 3
+    kv = 1.5
     radius = 0.2
-    speed = 0.2
+    speed = 0.1
     for path in [path1, path2]:
         follower = PurePursuit(path, radius, speed, kv)
         while True:

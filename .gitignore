@@ -8,10 +8,10 @@ calibration/tmp_data.p
 calibration/undistort
 calibration/echo_pose
 server
-serial_test
 web/server.log
 .webserver.video
 .slam.map
+.slam.plan
 __pycache__
 slam
 logs/*

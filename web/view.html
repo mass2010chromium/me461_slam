@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html scroll-behavior="smooth">
+    <head>
+        <meta charset="UTF-8" />
+    </head>
+    <body>
+        <div id="svgcontainer" style="position: absolute; left: 0px; top: 0px; margin: 10px; z-index: 2;">
+        </div>
+        <div style="position: absolute; left: 0px; top: 0px; width: 410px; height: 410px; margin: 5px; z-index: 1; background-color: black">
+            <img src="map" style="margin: 5px"/>
+        </div>
+        <div id="main" style="position: absolute; top: 430px; z-index: 3">
+            mmm
+        </div>
+        <div style="position: absolute; left: 700px; top: 0px; z-index: 1; margin: 5px;">
+            <img src="stream" />
+        </div>
+    <div style="position: absolute; left: 420px; top: 0px; width: 210px; height: 210px; background-color: blue; margin: 5px">
+            <img src="plan" style="width: 200px; height: 200px; margin: 5px"/>
+        </div>
+
+        <script type = "text/javascript" src = "https://d3js.org/d3.v4.min.js"></script>
+        <script type = "text/javascript" src = "include/joy_min.js"></script>
+        <script>
+            var width = 400;
+            var height = 400;
+            var svg = d3.select("#svgcontainer")
+                .append("svg").attr("width", width).attr("height", height);
+            const bb = d3.select('#svgcontainer').node().getBoundingClientRect();
+
+            const xScale = d3.scaleLinear()
+                .domain([-8, 8])
+                .range([0, width]);
+
+            const yScale = d3.scaleLinear()
+                .domain([-8, 8])
+                .range([height, 0]);
+
+            const pointer_dist = 0.5;
+            var svg_container = document.getElementById("svgcontainer");
+            svg_container.addEventListener('mousemove', (e) => {
+                if (mode != 1) { return; }
+                if (click_state != 1) { return; }
+                let mouse_x = (event.layerX - width/2) / 25;
+                let mouse_y = (width/2 - event.layerY) / 25;
+                let dy = mouse_y - click_y;
+                let dx = mouse_x - click_x;
+                let angle = Math.atan2(dy, dx);
+                target_pointer
+                   .attr('x1', xScale(click_x))
+                   .attr('y1', yScale(click_y))
+                   .attr('x2', xScale(click_x + pointer_dist * Math.cos(angle)))
+                   .attr('y2', yScale(click_y + pointer_dist * Math.sin(angle)));
+            });
+
+            const line = d3.line()
+                .curve(d3.curveNatural)
+                .x(d => xScale(d[0]))
+                .y(d => yScale(d[1]));
+
+            let points = [];
+            svg.append('path').attr('d', line(points));
+            let robot_pointer = svg.append('line').style('stroke', 'orange');
+            let robot_circle = svg.append('circle').style('fill', 'none').style('stroke', 'orange').attr("r", 8);
+            let target_pointer = svg.append('line').style('stroke', 'green');
+            let target_circle = svg.append('circle').style('fill', 'none').style('stroke', 'green').attr("r", 8).attr("cx", 999);
+
+            // TODO: stream instead of spam http
+            let target_div = document.getElementById("main");
+            function refresh() {
+                fetch("pose_slam")
+                    .then(rs => rs.json())
+                    .then(dat => {
+                        target_div.innerHTML = JSON.stringify(dat);
+                        setTimeout(refresh, 20);
+                        if (points.length >= 1000) {
+                            points.shift();
+                    }
+                        points.push([dat.x, dat.y]);
+
+                        svg.selectAll('path')
+                           .data([points])
+                           .attr('d', line)
+                           .attr('stroke', 'black')
+                           .attr('fill', 'none');
+                        robot_pointer
+                           .attr('x1', xScale(dat.x))
+                           .attr('y1', yScale(dat.y))
+                           .attr('x2', xScale(dat.x + pointer_dist * Math.cos(dat.heading)))
+                           .attr('y2', yScale(dat.y + pointer_dist * Math.sin(dat.heading)));
+                        robot_circle.attr('cx', xScale(dat.x)).attr('cy', yScale(dat.y));
+
+                    });
+            }
+            setTimeout(refresh, 20);
+    </script>
+    </body>
+</html>
