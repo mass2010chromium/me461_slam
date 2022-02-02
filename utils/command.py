@@ -13,9 +13,9 @@ save_start = 0
 x0 = 0
 y0 = 0
 while 1:
-    read_bytes = ser.read(21)
+    read_bytes = ser.read(25)
     #print("read")
-    data = struct.unpack('ffffLc', read_bytes)
+    data = struct.unpack('fffffLc', read_bytes)
     index = data[-2]
     if data[-1] != b'\n':
         if i != -1:
@@ -46,5 +46,5 @@ while 1:
     if (x-x0)**2 + (y-y0)**2 > 1:
         print("Done", x, y, x0, y0)
         break
-    command = struct.pack('ffc', -1.0, 0.0, '\n'.encode('utf-8'))
+    command = struct.pack('ffc', 1.0, 0.0, '\n'.encode('utf-8'))
     ser.write(command)
