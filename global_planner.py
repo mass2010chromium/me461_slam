@@ -82,6 +82,9 @@ while True:
         status = send_target(target_pos[0], target_pos[1], angle)
         if status:
             moved_distance += radius
+        else:
+            print("move failed")
+            moved_distance += 0.1
         if moved_distance >= 0.5:
             send_target(999, 0, 0)
             moved_distance = 0

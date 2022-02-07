@@ -134,8 +134,8 @@ if __name__ == "__main__":
         position_json = json.loads(position_info)
         return (position_json['x'], position_json['y'], position_json['heading'])
 
-    #path1 = [(0, 0), (0.5, 0), (0.5, 0.5), (0.25, 0.5)]
-    #path2 = [(0.5, 0.5), (0, 0.5), (0, 0), (0.25, 0)]
+    # path1 = [(0, 0), (0.5, 0), (0.5, 0.5), (0.25, 0.5)]
+    # path2 = [(0.5, 0.5), (0, 0.5), (0, 0), (0.25, 0)]
     path1 = [(0, 0), (1, 0), (1, 1), (0.5, 1)]
     path2 = [(1, 1), (0, 1), (0, 0), (0.5, 0)]
 

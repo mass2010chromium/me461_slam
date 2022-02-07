@@ -38,6 +38,13 @@ from motionlib import vectorops as vo
 MotionPlan.setOptions(type="fmm*")
 
 def get_pose():
+    """
+    Helper function for getting pose info from the server.
+    Makes an http request and returns the result in a tuple.
+    
+    Return:
+        (x, y, theta) global pose.
+    """
     position_info = urllib.request.urlopen("http://localhost:8080/pose_slam").read()
     position_json = json.loads(position_info)
     return (position_json['x'], position_json['y'], position_json['heading'])
