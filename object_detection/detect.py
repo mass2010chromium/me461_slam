@@ -16,18 +16,29 @@ play = True
 
 previous = ''
 
-
 classesFile = "coco.names"
 classNames = []
 with open(classesFile, 'rt') as f:
     classNames = f.read().rstrip('\n').split('\n')
 
+with open("../config.json") as _config:
+    config = json.load(_config)
+camera_pos = config['camera']
+
 #Undistort 
-with open("intrinsics.json") as _intrinsics:
+with open("../calibration/intrinsics.json") as _intrinsics:
     intrinsics = json.load(_intrinsics)
 camera_mat = np.array(intrinsics["matrix"])
 camera_dist = np.array(intrinsics["distortion"])
-
+camera_fx = camera_mat[0, 0]
+camera_fy = camera_mat[1, 1]
+camera_mid_x = camera_mat[0, 2]
+camera_mid_y = camera_mat[1, 2]
+def camera_to_world(px_x, px_y):
+    rx = camera_fy * -camera_pos['z'] / (camera_mid_y - px_y) + camera_pos['x']
+    ry = (camera_mid_x - px_x) * rx / camera_fx + camera_pos['y']
+    rz = 0
+    return [rx, ry, rz]
 
 ## Model Files
 modelConfiguration = "yolov3-tiny.cfg" #yolov3-tiny.cfg
@@ -90,19 +101,21 @@ while True:
         cv2.rectangle(image, (x, y), (x+w,y+h), (255, 0 , 255), 2)
         cv2.putText(image,f'{detect[3][detect[4][i]].upper()} {int(detect[2][i]*100)}%',
                   (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+
+        bottom_midpoint = (x+w/2, y+h)
+        world_coord = camera_to_world(*bottom_midpoint)
+        print(world_coord)
         if detect[3][detect[4][i]] != previous:
             cmd = 'espeak "{}"'.format(detect[3][detect[4][i]])
-            os.system(cmd)
+            print(cmd)
+            #os.system(cmd)
         previous = detect[3][detect[4][i]]
 
-        
-        
     #Undistort
     #gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     #out = cv2.undistort(gray, camera_mat, camera_dist)
 
-
     cv2.imshow("video", image) #image
     cv2.waitKey(1)
     time1 = time.time()
-    print(1/(time1-time0)) #fps
+    #print(1/(time1-time0)) #fps

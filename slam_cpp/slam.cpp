@@ -43,9 +43,9 @@ CameraInfo camera_info;
 
 // Transform from pixel space into 3d space.
 static inline void transform_point(vptr_r out, const vptr_r in) {
-    out[0] = camera_info.fy * camera_pos[2] / (camera_info.mid_y - in[1]);
+    out[0] = camera_info.fy * -camera_pos[2] / (camera_info.mid_y - in[1]);
     out[1] = (camera_info.mid_x - in[0]) * out[0] / camera_info.fx;
-    out[2] = camera_pos[2];
+    out[2] = -camera_pos[2];
 }
 
 // Project a point in real space into the given camera pose.
@@ -53,7 +53,7 @@ static inline void project_point(vptr_r out, const tptr_r cam_pose, const vptr_r
     motion_dtype p[3];
     __se3_apply(p, cam_pose, point);
     out[0] = camera_info.mid_x - p[1] * camera_info.fx / p[0];
-    out[1] = camera_info.mid_y - camera_pos[2] * camera_info.fy / p[0];
+    out[1] = camera_info.mid_y + camera_pos[2] * camera_info.fy / p[0];
 }
 
 // Get se3 pose of camera, given robot pose.
