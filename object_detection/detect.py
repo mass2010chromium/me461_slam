@@ -6,6 +6,7 @@ import numpy as np
 import json
 sys.path.append(os.path.expanduser('~/me461_slam'))
 from utils.read_mat import SharedArray
+import urllib.request
 
 videocap = SharedArray("../.webserver.video", [480, 640, 3], dtype=np.uint8)
 
@@ -89,11 +90,9 @@ while True:
     outputNames = [layerNames[i[0]-1] for i in net.getUnconnectedOutLayers()]
     outputs = net.forward(outputNames)
 
-
     detect = findObject(outputs,image)
 
-
-
+    detections = []
     for i in detect[0]:
         i = int(i)
         box = detect[1][i]
@@ -104,12 +103,24 @@ while True:
 
         bottom_midpoint = (x+w/2, y+h)
         world_coord = camera_to_world(*bottom_midpoint)
-        print(world_coord)
-        if detect[3][detect[4][i]] != previous:
-            cmd = 'espeak "{}"'.format(detect[3][detect[4][i]])
-            print(cmd)
-            #os.system(cmd)
-        previous = detect[3][detect[4][i]]
+        val = {
+            "name": detect[3][detect[4][i]],
+            "x": world_coord[0],
+            "y": world_coord[1],
+            "z": world_coord[2]
+        }
+        detections.append(val)
+        #if detect[3][detect[4][i]] != previous:
+        #    cmd = 'espeak "{}"'.format(detect[3][detect[4][i]])
+        #    print(cmd)
+        #    os.system(cmd)
+        #previous = detect[3][detect[4][i]]
+    
+    data = json.dumps(detections).encode('utf-8')
+    print(data)
+    req = urllib.request.Request("http://localhost:8080/detections", data=data)
+    resp = urllib.request.urlopen(req)
+    print(resp.read())
 
     #Undistort
     #gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)

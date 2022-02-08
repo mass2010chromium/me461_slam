@@ -94,6 +94,16 @@ struct RobotCommand {
 };
 typedef struct RobotCommand RobotCommand;
 
+struct Detection {
+  Detection(string name, double x, double y, double z) : name(name), x(x), y(y), z(z) {}
+
+  string name;
+  double x;
+  double y;
+  double z;
+};
+typedef struct Detection Detection;
+
 boost::lockfree::queue<RobotCommand> command_queue(128);
 boost::lockfree::queue<RobotCommand> target_queue(16);
 RobotCommand current_target(0, 0, 0);
@@ -116,6 +126,9 @@ std::shared_ptr<vector<uchar>> map_data;
 
 std::mutex plan_lock;
 std::shared_ptr<vector<uchar>> plan_data;
+
+std::mutex detection_lock;
+std::vector<Detection> detections;
 
 // lol single threaded server go brr
 int main() {
@@ -198,6 +211,48 @@ int main() {
         control_mode = pt.get<int>("mode");
       }
       response->write("STATUS Command recieved");
+    }
+    catch (const exception& e) {
+      response->write(SimpleWeb::StatusCode::client_error_bad_request, e.what());
+    }
+  };
+
+  server.resource["^/detections$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
+    stringstream stream;
+    detection_lock.lock();
+    std::vector<Detection> tmp = detections;
+    detection_lock.unlock();
+    stream << "[";
+    bool first = true;
+    for (Detection& d : tmp) {
+        if (!first) { stream << ","; }
+        stream << "{\"name\":\"" << d.name << "\","
+            << "\"x\":" << d.x << ","
+            << "\"y\":" << d.y << ","
+            << "\"z\":" << d.z << "}";
+        first = false;
+    }
+    stream << "]";
+    response->write(stream);
+  };
+
+  server.resource["^/detections$"]["POST"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> request) {
+    try {
+      ptree pt;
+      read_json(request->content, pt);
+      std::vector<Detection> ret;
+      for (auto& item : pt) {
+        auto name = item.second.get<string>("name");
+        auto x = item.second.get<double>("x");
+        auto y = item.second.get<double>("y");
+        auto z = item.second.get<double>("z");
+        Detection detect(name, x, y, z);
+        ret.push_back(detect);
+      }
+      detection_lock.lock();
+      detections = ret;
+      detection_lock.unlock();
+      response->write("STATUS detections info recvd");
     }
     catch (const exception& e) {
       response->write(SimpleWeb::StatusCode::client_error_bad_request, e.what());
