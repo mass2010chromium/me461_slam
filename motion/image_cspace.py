@@ -6,7 +6,7 @@ from klampt.plan.cspace import CSpace
 
 import json
 import os
-with open(os.path.expanduser("~/me461_slam/map_info.json"), "r") as map_info_file:
+with open(os.path.expanduser("~/me461_slam/config.json"), "r") as map_info_file:
     map_info = json.load(map_info_file)
 
 map_w = map_info['map_size']

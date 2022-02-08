@@ -28,7 +28,7 @@ using std::cout;
 using std::endl;
 using cv::Mat;
 
-const motion_dtype z_real = -0.105;
+motion_dtype camera_pos[3] = {0.04, 0.0325, 0.105};  // Camera relative to robot center.
 struct CameraInfo {
     motion_dtype fx;
     motion_dtype fy;
@@ -43,9 +43,9 @@ CameraInfo camera_info;
 
 // Transform from pixel space into 3d space.
 static inline void transform_point(vptr_r out, const vptr_r in) {
-    out[0] = camera_info.fy * z_real / (camera_info.mid_y - in[1]);
+    out[0] = camera_info.fy * camera_pos[2] / (camera_info.mid_y - in[1]);
     out[1] = (camera_info.mid_x - in[0]) * out[0] / camera_info.fx;
-    out[2] = z_real;
+    out[2] = camera_pos[2];
 }
 
 // Project a point in real space into the given camera pose.
@@ -53,13 +53,12 @@ static inline void project_point(vptr_r out, const tptr_r cam_pose, const vptr_r
     motion_dtype p[3];
     __se3_apply(p, cam_pose, point);
     out[0] = camera_info.mid_x - p[1] * camera_info.fx / p[0];
-    out[1] = camera_info.mid_y - z_real * camera_info.fy / p[0];
+    out[1] = camera_info.mid_y - camera_pos[2] * camera_info.fy / p[0];
 }
 
 // Get se3 pose of camera, given robot pose.
 static inline void get_camera_pose(tptr_r ret, const vptr_r robot_pose) {
     static const motion_dtype axis[3] = {0, 0, 1};
-    static const motion_dtype camera_pos[3] = {0.04, 0.0325, 0.105};  // Camera relative to robot center.
     motion_dtype tmp[3];
     tmp[0] = robot_pose[0];
     tmp[1] = robot_pose[1];
@@ -216,15 +215,22 @@ int main(int argc, char** argv)
     Mat camera_mat = Mat::zeros(3, 3, CV_64F);
     vector<double> distortion;
     read_intrinsics("../calibration/intrinsics.json", distortion, camera_mat, camera_info);
-    ptree map_json;
-    read_json_fname("../map_info.json", map_json);
-    map_w = map_json.get<double>("map_size");
-    map_center = map_w / 2;
-    map_scaling = map_json.get<double>("map_scale");
-
     ptree config_json;
-    read_json_fname("./config.json", config_json);
-    auto canny_config = config_json.get_child("canny");
+    read_json_fname("../config.json", config_json);
+    map_w = config_json.get<double>("map_size");
+    map_center = map_w / 2;
+    map_scaling = config_json.get<double>("map_scale");
+    const int frame_w = config_json.get<int>("image_w");
+    const int frame_h = config_json.get<int>("image_h");
+
+    auto camera_pose_config = config_json.get_child("camera");
+    camera_pos[0] = camera_pose_config.get<double>("x");
+    camera_pos[1] = camera_pose_config.get<double>("y");
+    camera_pos[2] = camera_pose_config.get<double>("z");
+
+    ptree slam_config_json;
+    read_json_fname("./slam_config.json", slam_config_json);
+    auto canny_config = slam_config_json.get_child("canny");
     double canny_min = canny_config.get<double>("min");
     double canny_max = canny_config.get<double>("max");
 
@@ -305,7 +311,7 @@ int main(int argc, char** argv)
     std::deque<vptr> pose_queue;
     const size_t VIDEO_DELAY = 0;
 
-    Mat disp(480, 640, CV_8UC3);
+    Mat disp(frame_h, frame_w, CV_8UC3);
     Mat undistort;
     Mat deriv;
 

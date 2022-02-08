@@ -53,6 +53,15 @@ char* map_file(std::string filename, int open_flags, size_t map_size) {
     return ret;
 }
 
+/*
+ * Convenience function for reading json from filename.
+ */
+void read_json_fname(const std::string fname, ptree& pt) {
+    std::ifstream t(fname);
+    std::stringstream buffer;
+    buffer << t.rdbuf();
+    read_json(buffer, pt);
+}
 
 const float FEET_TO_METER = 0.3048;
 const float METER_TO_FEET = 3.2808399;
@@ -110,6 +119,12 @@ std::shared_ptr<vector<uchar>> plan_data;
 
 // lol single threaded server go brr
 int main() {
+  ptree config_json;
+  read_json_fname("./config.json", config_json);
+  const int map_w = config_json.get<int>("map_size");
+  const int frame_w = config_json.get<int>("image_w");
+  const int frame_h = config_json.get<int>("image_h");
+
   // HTTP-server at port 8080 using 1 thread
   // Unless you do more heavy non-threaded processing in the resources,
   // 1 thread is usually faster than several threads
@@ -537,10 +552,12 @@ int main() {
   const int image_buffer_size = 10;
   cv::Mat m;
   // Image is 480x640x3 bytes.
-  char* buffer = map_file(".webserver.video", O_CREAT | O_RDWR, 480*640*3);
-  char* slam_buffer = map_file(".slam.map", O_CREAT | O_RDWR, 400*400*3);
-  char* plan_buffer = map_file(".slam.plan", O_CREAT | O_RDWR, 400*400*3);
-  cv::Mat map_img(400, 400, CV_8UC3);
+  const int map_img_size = map_w*map_w*3;
+  const int camera_img_size = frame_w*frame_h*3;
+  char* buffer = map_file(".webserver.video", O_CREAT | O_RDWR, camera_img_size);
+  char* slam_buffer = map_file(".slam.map", O_CREAT | O_RDWR, map_img_size);
+  char* plan_buffer = map_file(".slam.plan", O_CREAT | O_RDWR, map_img_size);
+  cv::Mat map_img(map_w, map_w, CV_8UC3);
   if (buffer == NULL) {
     perror("mmap failure");
   }
@@ -560,12 +577,12 @@ int main() {
       }
       if (frame % 30 == 0) {
         if (slam_buffer != NULL) {
-          memcpy(map_img.data, slam_buffer, 400*400*3);
+          memcpy(map_img.data, slam_buffer, map_img_size);
           map_lock.lock();
           map_data = std::make_shared<vector<uchar>>();
           cv::imencode(".jpg", map_img, *map_data, params);
           map_lock.unlock();
-          memcpy(map_img.data, plan_buffer, 400*400*3);
+          memcpy(map_img.data, plan_buffer, map_img_size);
           plan_lock.lock();
           plan_data = std::make_shared<vector<uchar>>();
           cv::imencode(".jpg", map_img, *plan_data, params);
