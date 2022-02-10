@@ -12,7 +12,7 @@ from utils.read_mat import SharedArray
 from motion.image_cspace import ImageCSpace
 from motionlib import vectorops as vo
 
-with open("map_info.json", "r") as map_info_file:
+with open("config.json", "r") as map_info_file:
     map_info = json.load(map_info_file)
 
 
@@ -21,6 +21,10 @@ map_center = map_w/2
 map_scale = map_info['map_scale']
 bound = (map_w / map_scale) / 2
 cap = SharedArray('.slam.map', (map_w,map_w,3), np.uint8)
+
+
+## Map exploration for the 
+exploredMap = []
 
 def get_planner_status():
     planner_status = urllib.request.urlopen("http://localhost:8080/planner_status").read()
@@ -89,4 +93,23 @@ while True:
             send_target(999, 0, 0)
             moved_distance = 0
         break
+
+    
+    def findTheShortestPath():
+
+
+
+
+def findTarget():
+    
+
+
+
+# visited = set()
+# def dfs(visited,temp,object):
+#     if object not in visited:
+#         visited.add(object)
+#         for object2 in temp[object]:
+#             dfs(visited,temp,object2)
+
 
