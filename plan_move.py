@@ -5,6 +5,8 @@ import json
 import math
 import time
 
+from motion.simple_motions import get_pose, move_heading, spin_in_circle
+
 import sys
 
 do_move = False
@@ -36,73 +38,6 @@ from klampt.plan.cspace import CSpace, MotionPlan
 from motionlib import vectorops as vo
 
 MotionPlan.setOptions(type="fmm*")
-
-def get_pose():
-    """
-    Helper function for getting pose info from the server.
-    Makes an http request and returns the result in a tuple.
-    
-    Return:
-        (x, y, theta) global pose.
-    """
-    position_info = urllib.request.urlopen("http://localhost:8080/pose_slam").read()
-    position_json = json.loads(position_info)
-    return (position_json['x'], position_json['y'], position_json['heading'])
-
-
-kv = 1.5
-def move_heading(target_angle):
-    ok = 0
-    while True:
-        cur = get_pose()
-        heading = cur[2] % (2*math.pi)
-        angle_error = target_angle - heading
-        if angle_error > 2*math.pi:
-            angle_error -= 2*math.pi
-        elif angle_error < -2*math.pi:
-            angle_error += 2*math.pi
-    
-        if angle_error > math.pi:
-            angle_error = angle_error - 2*math.pi
-        if angle_error < -math.pi:
-            angle_error = 2*math.pi + angle_error
-    
-        if abs(angle_error) < 0.1:
-            ok += 1
-            if ok > 30:
-                data = json.dumps({'v': 0, 'w': 0}).encode('utf-8')
-                req = urllib.request.Request("http://localhost:8080/raw", data=data)
-                resp = urllib.request.urlopen(req)
-                break
-        else:
-            ok = 0
-    
-        data = json.dumps({'v': 0, 'w': np.clip(kv * angle_error, -1, 1)}).encode('utf-8')
-        req = urllib.request.Request("http://localhost:8080/raw", data=data)
-        resp = urllib.request.urlopen(req)
-
-def spin_in_circle():
-    cur = get_pose()
-    heading = cur[2]
-    target_angle = heading + 2*math.pi
-    while True:
-        cur = get_pose()
-        heading = cur[2]
-        angle_error = target_angle - heading
-    
-        if abs(angle_error) < 0.1:
-            ok += 1
-            if ok > 30:
-                data = json.dumps({'v': 0, 'w': 0}).encode('utf-8')
-                req = urllib.request.Request("http://localhost:8080/raw", data=data)
-                resp = urllib.request.urlopen(req)
-                break
-        else:
-            ok = 0
-    
-        data = json.dumps({'v': 0, 'w': np.clip(kv * angle_error, -1, 1)}).encode('utf-8')
-        req = urllib.request.Request("http://localhost:8080/raw", data=data)
-        resp = urllib.request.urlopen(req)
 
 def move_to_pose(image, end_pose):
     position_info = urllib.request.urlopen("http://localhost:8080/pose_slam").read()
@@ -165,6 +100,7 @@ def move_to_pose(image, end_pose):
     if do_move:
         radius = 0.2
         speed = 0.1
+        kv = 1.5
         follower = PurePursuit(path, radius, speed, kv)
         cur = get_pose()
         print(cur)
@@ -195,29 +131,30 @@ def move_to_pose(image, end_pose):
         return True
     return False
 
-data = json.dumps({'status': 0}).encode('utf-8')
-req = urllib.request.Request("http://localhost:8080/planner_status", data=data)
-resp = urllib.request.urlopen(req)
-print(resp.read())
-while True:
-    ret, image = cap.read()
-    if display:
-        cv2.imshow("map", image)
-    time.sleep(0.050)
-    target_info = urllib.request.urlopen("http://localhost:8080/target").read()
-    target_info = json.loads(target_info)
-    if not target_info['new_request']:
-        continue
-    data = json.dumps({'status': 1}).encode('utf-8')
+if __name__ == "__main__":
+    data = json.dumps({'status': 0}).encode('utf-8')
     req = urllib.request.Request("http://localhost:8080/planner_status", data=data)
     resp = urllib.request.urlopen(req)
-    end_pose = (target_info['x'], target_info['y'], target_info['heading'])
-    res = move_to_pose(image, end_pose)
+    print(resp.read())
+    while True:
+        ret, image = cap.read()
+        if display:
+            cv2.imshow("map", image)
+        time.sleep(0.050)
+        target_info = urllib.request.urlopen("http://localhost:8080/target").read()
+        target_info = json.loads(target_info)
+        if not target_info['new_request']:
+            continue
+        data = json.dumps({'status': 1}).encode('utf-8')
+        req = urllib.request.Request("http://localhost:8080/planner_status", data=data)
+        resp = urllib.request.urlopen(req)
+        end_pose = (target_info['x'], target_info['y'], target_info['heading'])
+        res = move_to_pose(image, end_pose)
 
-    if res:
-        status = 0
-    else:
-        status = 2
-    data = json.dumps({'status': status}).encode('utf-8')
-    req = urllib.request.Request("http://localhost:8080/planner_status", data=data)
-    resp = urllib.request.urlopen(req)
+        if res:
+            status = 0
+        else:
+            status = 2
+        data = json.dumps({'status': status}).encode('utf-8')
+        req = urllib.request.Request("http://localhost:8080/planner_status", data=data)
+        resp = urllib.request.urlopen(req)

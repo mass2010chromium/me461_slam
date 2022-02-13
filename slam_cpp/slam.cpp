@@ -230,6 +230,7 @@ int main(int argc, char** argv)
 
     ptree slam_config_json;
     read_json_fname("./slam_config.json", slam_config_json);
+    int med_blur_amount = slam_config_json.get<int>("med_blur");
     auto canny_config = slam_config_json.get_child("canny");
     double canny_min = canny_config.get<double>("min");
     double canny_max = canny_config.get<double>("max");
@@ -424,7 +425,7 @@ int main(int argc, char** argv)
 //                }
 //            }
 //        }
-        cv::medianBlur(hsv[1], hsv[1], 5);
+        cv::medianBlur(hsv[1], hsv[1], med_blur_amount);
         cv::Canny(hsv[1], deriv, canny_min, canny_max);
         //cv::Canny(processing, deriv, 100, 200);
         deriv = deriv / 2;

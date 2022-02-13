@@ -11,7 +11,7 @@ import urllib.request
 videocap = SharedArray("../.webserver.video", [480, 640, 3], dtype=np.uint8)
 
 whT = 160 #320
-confThreshold =0.5
+confThreshold =0.4
 nmsThreshold= 0.2
 play = True
 

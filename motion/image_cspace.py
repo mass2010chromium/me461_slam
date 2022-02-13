@@ -52,6 +52,6 @@ class ImageCSpace(CSpace):
         image_section = self.obstacle_map[py-robot_radius_px:py+robot_radius_px+1,
                                           px-robot_radius_px:px+robot_radius_px+1] > 80
         collision_score = image_section.ravel().dot(robot_kernel.ravel())
-        #print(q, collision_score)
+        print(q, collision_score)
         return bool(collision_score < 10)
 
