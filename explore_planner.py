@@ -5,8 +5,9 @@ import json
 import math
 import time
 import random
-
+import requests
 import sys
+import os
 
 from utils.read_mat import SharedArray
 from motion.image_cspace import ImageCSpace, pos_to_map, robot_radius_px
@@ -22,12 +23,6 @@ map_center = map_w/2
 map_scale = map_info['map_scale']
 bound = (map_w / map_scale) / 2
 cap = SharedArray('.slam.map', (map_w,map_w,3), np.uint8)
-
-
-# TODO: object detection (pause when person detected, stop for few sec and resume when stop sign detected)
-data = json.dumps({'v': cmd[0], 'w': cmd[1]}).encode('utf-8')
-req = urllib.request.Request("http://localhost:8080/raw", data=data)
-resp = urllib.request.urlopen(req)
 
 direcs = [[1, 0],[-1,0],[0,-1],[0,1]]
 
@@ -53,7 +48,7 @@ def dfs(current_pos, end_pos, step_size, max_radius, visited):
     cur_real = vo.mul(current_pos, step_size)
     print(f"Expanding node: {current_pos}")
     targets = (tuple(vo.add(dir, current_pos)) for dir in direcs)
-    targets_priority = sorted([(vo.norm(vo.sub(x, end_pos)), x) for x in targets])
+    targets_priority = sorted([(vo.norm(vo.sub(vo.mul(x, step_size), end_pos)), x) for x in targets])
     for _, target in targets_priority:
         if target in visited:
             continue
@@ -68,7 +63,7 @@ def dfs(current_pos, end_pos, step_size, max_radius, visited):
         visited.add(target)
         if res:
             # Successfully moved to new cell.
-            if target == end_pos:
+            if max(np.abs(vo.sub(end_pos, target_real))) < step_size/2:
                 # We are done.
                 return True, True
             done, found = dfs(target, end_pos, step_size, max_radius, visited)
@@ -79,8 +74,9 @@ def dfs(current_pos, end_pos, step_size, max_radius, visited):
             # We are done.
             return True, False
 
+        print(f"backtrack {current_pos}")
         start_pos = get_pose()[:2]
-        path = [start_pos, current_pos]
+        path = [start_pos, cur_real]
         try_move_path(path, False)
     return False, False
 
@@ -97,8 +93,36 @@ def try_move_path(path, col_check=True):
     if col_check:
         ret, image = cap.read()
         space = ImageCSpace(image, cur[:2])
+    
+    detecStopSign = 0
     while True:
+        personDetected = False
         cur = get_pose()
+        returnResponse = requests.get("http://localhost:8080/detections").json()
+        i = 0
+        for responseObs in returnResponse:
+            objectDetected = responseObs["name"]
+            if objectDetected == "stop sign":
+                if detecStopSign == 0:
+                    data = json.dumps({'v': 0, 'w': 0}).encode('utf-8')
+                    req = urllib.request.Request("http://localhost:8080/raw", data=data)
+                    resp = urllib.request.urlopen(req)
+                    print("stop sign")
+                    time.sleep(5)
+                detecStopSign = 500
+            else:
+                i+=1
+            if objectDetected == "person":
+                data = json.dumps({'v': 0, 'w': 0}).encode('utf-8')
+                personDetected = True
+                print("person")
+
+        if i == len(returnResponse) and detecStopSign > 0:
+            detecStopSign -= 1
+
+        if personDetected:
+            continue
+        
 
         if col_check:
             ret, image = cap.read()
@@ -129,6 +153,7 @@ def try_move_path(path, col_check=True):
 
 if __name__ == "__main__":
     visited = set()
+    visited.add((0, 0))
     step_size = 0.5 # meters
-    max_radius = 1
-    dfs((0, 0), (1, 1), step_size, max_radius, visited)
+    max_radius = 3
+    dfs((0, 0), (1.5, 0), step_size, max_radius, visited)

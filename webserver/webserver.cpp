@@ -604,16 +604,16 @@ int main() {
     }
   });
 
-  const int image_buffer_size = 10;
   cv::Mat m;
   // Image is 480x640x3 bytes.
   const int map_img_size = map_w*map_w*3;
   const int camera_img_size = frame_w*frame_h*3;
-  char* buffer = map_file(".webserver.video", O_CREAT | O_RDWR, camera_img_size);
+  char* image_buffer = map_file(".webserver.video", O_CREAT | O_RDWR, camera_img_size);
+  char* detect_buffer = map_file(".detect.video", O_CREAT | O_RDWR, camera_img_size);
   char* slam_buffer = map_file(".slam.map", O_CREAT | O_RDWR, map_img_size);
   char* plan_buffer = map_file(".slam.plan", O_CREAT | O_RDWR, map_img_size);
   cv::Mat map_img(map_w, map_w, CV_8UC3);
-  if (buffer == NULL) {
+  if (image_buffer == NULL) {
     perror("mmap failure");
   }
   else {
@@ -621,26 +621,30 @@ int main() {
     size_t frame = 0;
     for (;; ++frame) {
       bool res = camera.read(m);
-      size_t nbytes = (m.dataend - m.datastart) * sizeof(uchar);
-      memcpy(buffer, m.data, nbytes);
+      memcpy(image_buffer, m.data, camera_img_size);
       
       if (frame % 3 == 0) {
+        memcpy(m.data, detect_buffer, camera_img_size);
+        auto _image_data = std::make_shared<vector<uchar>>();
+        cv::imencode(".jpg", m, *_image_data, params);
         image_lock.lock();
-        image_data = std::make_shared<vector<uchar>>();
-        cv::imencode(".jpg", m, *image_data, params);
+        image_data = _image_data;
         image_lock.unlock();
       }
       if (frame % 30 == 0) {
         if (slam_buffer != NULL) {
           memcpy(map_img.data, slam_buffer, map_img_size);
+          auto _map_data = std::make_shared<vector<uchar>>();
+          cv::imencode(".jpg", map_img, *_map_data, params);
           map_lock.lock();
-          map_data = std::make_shared<vector<uchar>>();
-          cv::imencode(".jpg", map_img, *map_data, params);
+          map_data = _map_data;
           map_lock.unlock();
+
           memcpy(map_img.data, plan_buffer, map_img_size);
+          auto _plan_data = std::make_shared<vector<uchar>>();
+          cv::imencode(".jpg", map_img, *_plan_data, params);
           plan_lock.lock();
-          plan_data = std::make_shared<vector<uchar>>();
-          cv::imencode(".jpg", map_img, *plan_data, params);
+          plan_data = _plan_data;
           plan_lock.unlock();
         }
       }

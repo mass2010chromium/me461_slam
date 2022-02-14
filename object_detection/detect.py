@@ -8,11 +8,16 @@ sys.path.append(os.path.expanduser('~/me461_slam'))
 from utils.read_mat import SharedArray
 import urllib.request
 
-videocap = SharedArray("../.webserver.video", [480, 640, 3], dtype=np.uint8)
+config = json.load(open("../config.json"))
+image_w = config["image_w"]
+image_h = config["image_h"]
+
+videocap = SharedArray("../.webserver.video", [image_h, image_w, 3], dtype=np.uint8)
+video_annot = SharedArray("../.detect.video", [image_h, image_w, 3], dtype=np.uint8)
 
 whT = 160 #320
-confThreshold =0.4
-nmsThreshold= 0.2
+confThreshold = 0.4
+nmsThreshold = 0.2
 play = True
 
 previous = ''
@@ -126,7 +131,8 @@ while True:
     #gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     #out = cv2.undistort(gray, camera_mat, camera_dist)
 
-    cv2.imshow("video", image) #image
-    cv2.waitKey(1)
+    #cv2.imshow("video", image) #image
+    #cv2.waitKey(1)
+    video_annot.write(image)
     time1 = time.time()
     #print(1/(time1-time0)) #fps

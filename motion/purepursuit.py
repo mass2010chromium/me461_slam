@@ -146,12 +146,13 @@ if __name__ == "__main__":
         follower = PurePursuit(path, radius, speed, kv)
         while True:
             cur = get_pose()
-            print(cur)
+            #print(cur)
             done, cmd = follower.step(cur)
             if done:
                 break
             data = json.dumps({'v': cmd[0], 'w': cmd[1]}).encode('utf-8')
             if abs(cmd[0]) > 1 or abs(cmd[1]) > 1:
-                print(data)
+                pass
+                #print(data)
             req = urllib.request.Request("http://localhost:8080/raw", data=data)
             resp = urllib.request.urlopen(req)
