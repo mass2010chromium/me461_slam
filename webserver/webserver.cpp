@@ -1,3 +1,8 @@
+/**
+ * Webserver written in C++ to serve all the different pieces of code running on the robot.
+ * (SLAM, Object Detector, motion planning and moving code all read/write data to a central server.
+ */
+
 #include <simple-web-server/server_http.hpp>
 #include <future>
 #include <math.h>
@@ -426,15 +431,6 @@ int main() {
         usleep(100000);
       }
       cout << "map::closing connection" << endl;
-    });
-    work_thread.detach();
-  };
-
-  // GET-example simulating heavy work in a separate thread
-  server.resource["^/work$"]["GET"] = [](shared_ptr<HttpServer::Response> response, shared_ptr<HttpServer::Request> /*request*/) {
-    thread work_thread([response] {
-      this_thread::sleep_for(chrono::seconds(5));
-      response->write("Work done");
     });
     work_thread.detach();
   };

@@ -1,3 +1,11 @@
+"""
+This file has our object detection code.
+Most of it is from last semester (ME 461 final project).
+I added code to let it estimate the detected objects' positions,
+and also publish the detection information to the server to integrate
+with the path planning algorithm.
+"""
+
 import os
 import sys
 import cv2
@@ -8,6 +16,7 @@ sys.path.append(os.path.expanduser('~/me461_slam'))
 from utils.read_mat import SharedArray
 import urllib.request
 
+# Load some config to know about camera image size
 config = json.load(open("../config.json"))
 image_w = config["image_w"]
 image_h = config["image_h"]
@@ -52,8 +61,13 @@ modelWeights = "yolov3-tiny.weights" #yolov3-tiny.weights
 net = cv2.dnn.readNetFromDarknet(modelConfiguration, modelWeights)
 net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
 net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+# We are using opencv directly to run our CV model instead of TensorFlow.
+# Works well enough, we get about 3fps ish
 
 def findObject(outputs, img):
+    """
+    From the NN output, generate a list of detections.
+    """
     hT, wT, cT = img.shape
     bbox = []
     classIds = []
@@ -74,19 +88,11 @@ def findObject(outputs, img):
     indices = list(cv2.dnn.NMSBoxes(bbox, confs, confThreshold, nmsThreshold))
 
     return indices, bbox, confs, classNames, classIds
-'''
-    for i in indices:
-        i = int(i)
-        box = bbox[i]
-        x,y,w,h = box[0], box[1], box[2], box[3]
-        cv2.rectangle(img, (x, y), (x+w,y+h), (255, 0 , 255), 2)
-        cv2.putText(img,f'{classNames[classIds[i]].upper()} {int(confs[i]*100)}%',
-                  (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
-'''
     
 while True:
     time0 = time.time()
 
+    # Read camera image
     success, image = videocap.read()
 
     blob = cv2.dnn.blobFromImage(image, 1/255, (whT, whT), [0, 0, 0], 1, crop=False)
@@ -95,8 +101,10 @@ while True:
     outputNames = [layerNames[i[0]-1] for i in net.getUnconnectedOutLayers()]
     outputs = net.forward(outputNames)
 
+    # Postprocess NN output
     detect = findObject(outputs,image)
 
+    # Label bounding box and compute pose estimate
     detections = []
     for i in detect[0]:
         i = int(i)
