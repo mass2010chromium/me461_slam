@@ -169,6 +169,7 @@
                     const w_command = -joy.GetX() / 100.0;
                     if (v_command != 0 || w_command != 0) {
                         let data = { v: v_command, w: w_command };
+                        console.log(data);
                         fetch("raw", {
                                 method: 'POST',
                                 headers: {'Content-Type': 'application/json'},

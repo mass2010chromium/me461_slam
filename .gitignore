@@ -12,6 +12,7 @@ web/server.log
 .webserver.video
 .slam.map
 .slam.plan
+.detect.video
 __pycache__
 slam
 logs/*
