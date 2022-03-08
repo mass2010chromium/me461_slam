@@ -15,3 +15,6 @@ web/server.log
 __pycache__
 slam
 logs/*
+**/node_modules/*
+.editor_log.txt
+package-lock.json

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <style>
+      .container{
+                  display: flex;
+                }
+    </style>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+    <script src="https://unpkg.com/sweetalert/dist/sweetalert.min.js"></script>
+    <script src="./electron.js"></script>
+    
+  </head>
+
+  <body>
+    <div class="container">
+  
+      <div class="jumbotron">
+      <h2>CS498: IoT -- Lab 2</h2>
+
+      <!-- <video class="center" width="600" height="400" controls>
+        <source src="samplevid.mp4" type="video/mp4">
+          Your browser does not support the video tag.
+      </video> -->
+  <img src="http://172.16.103.6:8080/stream" id='pics'>
+    </div> 
+  
+  </div>
+
+  <div class="row">
+    <div class="container">
+        <div class="jumbotron text-center col-md-6">
+            <span>&nbsp;&nbsp;</span> 
+            <span id="upArrow" style='font-size:50px; color:grey;'>&#8679;</span>
+            <br>
+            <span id="leftArrow" style='font-size:45px; color:grey;'>&#8678;</span>
+            <span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> 
+            <span id="rightArrow" style='font-size:45px; color:grey;'>&#8680;</span>
+            <br>
+            <span>&nbsp;&nbsp;</span> 
+            <span id="downArrow" style='font-size:50px; color:grey;'>&#8681;</span>
+        </div>
+
+        <div class="jumbotron text-left col-md-6">
+        <input id="message" type="text" placeholder="message to Pi"/>
+        <button class="btn btn-success" onclick="update_data()">Sumbit</button>
+          <p>
+            <span id="direction_dot" style="color:Green">&bull;</span> Movement Direction: <span id="direction"> </span>
+           <br>
+           <span id="speed_dot" style="color:green">&bull;</span> Speed: <span id="speed">0.0</span>  
+           <br>
+           <span id="heading_dot" style="color:green">&bull;</span> Abs. Heading: <span id="heading">0.0</span>
+           <br>
+           <span id="mode_dot" style="color:green">&bull;</span> Operation Mode: <span id="mode">0.0</span>
+           <br>
+           Bluetooth return value: <span id="bluetooth"> </span>
+          </p>  
+        </div>
+    </div>
+</div>
+
+  </body>
+</html>
+
