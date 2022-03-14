@@ -7,8 +7,6 @@ var server_addr = "172.16.103.6";   // the IP address of your Raspberry PI
 function client(){
     
     const net = require('net');
-    var input = document.getElementById("message").value;
-
     fetch("http://"+server_addr+":"+server_port+"/pose_slam")
         .then(rs => rs.json())
         .then(dat => {
@@ -21,27 +19,6 @@ function client(){
         .then(dat => {
             document.getElementById("mode").textContent = dat.mode;
         });
-
-    const client = net.createConnection({ port: server_port, host: server_addr }, () => {
-        // 'connect' listener.
-        console.log('connected to server!');
-        // send the message
-        client.write(`${input}\r\n`);
-    });
-    
-    // get the data from the server
-    client.on('data', (data) => {
-        document.getElementById("bluetooth").innerHTML = data;
-        console.log(data.toString());
-        client.end();
-        client.destroy();
-    });
-
-    client.on('end', () => {
-        console.log('disconnected from server');
-    });
-
-
 }
 
 function sendVelocity(v_command, w_command) {
@@ -74,13 +51,13 @@ function updateKey(e) {
         // left (a)
         document.getElementById("leftArrow").style.color = "green";
         document.getElementById("direction").textContent = "LEFT";
-        sendVelocity(0, 0.2);
+        sendVelocity(0, 0.4);
     }
     else if (e.keyCode == '68') {
         // right (d)
         document.getElementById("rightArrow").style.color = "green";
         document.getElementById("direction").textContent = "RIGHT";
-        sendVelocity(0, -0.2);
+        sendVelocity(0, -0.4);
     }
 }
 
